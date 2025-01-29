@@ -21,9 +21,25 @@ import {
   updateDoc,
   Timestamp,
   arrayUnion,
-  serverTimestamp
+  arrayRemove,
+  serverTimestamp as firestoreTimestamp,
+  enableIndexedDbPersistence,
+  disableNetwork,
+  enableNetwork,
+  waitForPendingWrites,
+  CACHE_SIZE_UNLIMITED
 } from 'firebase/firestore';
-import { ref, onValue, set, off, get } from 'firebase/database';
+import { 
+  ref, 
+  onValue, 
+  set, 
+  get,
+  update,
+  serverTimestamp as rtdbTimestamp,
+  onDisconnect,
+  off,
+  remove
+} from 'firebase/database';
 import { 
   auth, 
   db,
@@ -65,6 +81,26 @@ const retryOperation = async (operation, retryCount = 0) => {
     }
     
     throw error;
+  }
+};
+
+// Add connection management functions
+const initializeFirestore = async () => {
+  try {
+    // Enable offline persistence with unlimited cache
+    await enableIndexedDbPersistence(db, {
+      cacheSizeBytes: CACHE_SIZE_UNLIMITED
+    }).catch((err) => {
+      if (err.code === 'failed-precondition') {
+        // Multiple tabs open, persistence can only be enabled in one tab at a time
+        console.warn('Persistence disabled: multiple tabs open');
+      } else if (err.code === 'unimplemented') {
+        // The current browser doesn't support persistence
+        console.warn('Persistence not supported by browser');
+      }
+    });
+  } catch (err) {
+    console.error('Error initializing Firestore:', err);
   }
 };
 
@@ -112,29 +148,36 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Monitor online status and manage Firestore network state
+  // Initialize Firestore when the app starts
   useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      enableFirestoreNetwork().catch(console.error);
+    initializeFirestore();
+  }, []);
+
+  // Update online/offline handling
+  useEffect(() => {
+    const handleConnectionChange = async () => {
+      try {
+        if (navigator.onLine) {
+          await enableNetwork(db);
+          setIsOnline(true);
+        } else {
+          await disableNetwork(db);
+          setIsOnline(false);
+        }
+      } catch (err) {
+        console.error('Error handling connection change:', err);
+      }
     };
 
-    const handleOffline = () => {
-      setIsOnline(false);
-      disableFirestoreNetwork().catch(console.error);
-    };
+    window.addEventListener('online', handleConnectionChange);
+    window.addEventListener('offline', handleConnectionChange);
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    // Enable network on initial load if online
-    if (navigator.onLine) {
-      enableFirestoreNetwork().catch(console.error);
-    }
+    // Initial check
+    handleConnectionChange();
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleConnectionChange);
+      window.removeEventListener('offline', handleConnectionChange);
     };
   }, []);
 
@@ -243,23 +286,199 @@ export const AuthProvider = ({ children }) => {
     return () => unsubscribe();
   }, [isOnline]);
 
-  // Add real-time listener for partner status
+  // Enhanced connection status management
   useEffect(() => {
     if (!user?.uid) return;
 
-    const userStatusRef = ref(rtdb, `users/${user.uid}/partnerStatus`);
-    onValue(userStatusRef, (snapshot) => {
-      const status = snapshot.val();
-      if (status === 'disconnected') {
-        setPartner(null);
-        setDisconnectMessage('Your partner has disconnected');
-        // Clean up Firestore
-        const userRef = doc(db, 'users', user.uid);
-        updateDoc(userRef, { partnerId: null }).catch(console.error);
+    let isSubscribed = true;
+    const cleanupFunctions = [];
+
+    const setupConnection = async () => {
+      try {
+        // Create references
+        const userStatusRef = ref(rtdb, `status/${user.uid}`);
+        const userConnectionRef = ref(rtdb, '.info/connected');
+        const connectedRef = ref(rtdb, `connections/${user.uid}`);
+
+        // Set up connection listener
+        const handleConnection = async (snapshot) => {
+          if (!isSubscribed) return;
+          if (snapshot.val() !== true) return;
+
+          try {
+            // Set up disconnect handlers first
+            await Promise.all([
+              onDisconnect(connectedRef).set({
+                status: 'disconnected',
+                lastSeen: rtdbTimestamp(),
+                partnerId: partner?.uid || null
+              }),
+              onDisconnect(userStatusRef).set({
+                state: 'offline',
+                last_changed: rtdbTimestamp()
+              })
+            ]);
+
+            // Then set online status
+            await Promise.all([
+              set(connectedRef, {
+                status: 'connected',
+                lastSeen: rtdbTimestamp(),
+                partnerId: partner?.uid || null
+              }),
+              set(userStatusRef, {
+                state: 'online',
+                last_changed: rtdbTimestamp()
+              })
+            ]);
+          } catch (err) {
+            console.error('Error setting up connection:', err);
+          }
+        };
+
+        // Set up connection listener
+        const unsubConnection = onValue(userConnectionRef, handleConnection);
+        cleanupFunctions.push(unsubConnection);
+
+        // Set up partner monitoring if we have a partner
+        if (partner?.uid) {
+          const partnerConnectionRef = ref(rtdb, `connections/${partner.uid}`);
+          const partnerStatusRef = ref(rtdb, `status/${partner.uid}`);
+
+          const handlePartnerConnection = async (snapshot) => {
+            if (!isSubscribed) return;
+            const connection = snapshot.val();
+
+            if (!connection || connection.status === 'disconnected') {
+              try {
+                // Get fresh partner data
+                const partnerDoc = await getDoc(doc(db, 'users', partner.uid));
+                
+                if (!partnerDoc.exists() || partnerDoc.data().partnerId !== user.uid) {
+                  // Clean up Firestore first
+                  const batch = writeBatch(db);
+                  batch.update(doc(db, 'users', user.uid), { 
+                    partnerId: null,
+                    inviteCodes: [] 
+                  });
+                  if (partnerDoc.exists()) {
+                    batch.update(doc(db, 'users', partner.uid), { 
+                      partnerId: null,
+                      inviteCodes: [] 
+                    });
+                  }
+                  await batch.commit();
+
+                  // Then clean up RTDB
+                  await Promise.all([
+                    remove(ref(rtdb, `connections/${user.uid}`)),
+                    remove(ref(rtdb, `connections/${partner.uid}`)),
+                    remove(ref(rtdb, `status/${user.uid}`)),
+                    remove(ref(rtdb, `status/${partner.uid}`))
+                  ]);
+
+                  // Finally update local state
+                  if (isSubscribed) {
+                    setPartner(null);
+                    setDisconnectMessage('Your partner has disconnected');
+                  }
+                }
+              } catch (err) {
+                console.error('Error handling partner disconnection:', err);
+              }
+            }
+          };
+
+          const unsubPartner = onValue(partnerConnectionRef, handlePartnerConnection);
+          cleanupFunctions.push(unsubPartner);
+
+          const handlePartnerStatus = (snapshot) => {
+            if (!isSubscribed) return;
+            const status = snapshot.val();
+            if (status?.state === 'offline') {
+              console.log('Partner is offline');
+            }
+          };
+
+          const unsubPartnerStatus = onValue(partnerStatusRef, handlePartnerStatus);
+          cleanupFunctions.push(unsubPartnerStatus);
+        }
+      } catch (err) {
+        console.error('Error in connection setup:', err);
+      }
+    };
+
+    setupConnection();
+
+    // Cleanup function
+    return () => {
+      isSubscribed = false;
+      
+      // Clean up all listeners
+      cleanupFunctions.forEach(fn => fn());
+      
+      // Set offline status
+      if (user?.uid) {
+        Promise.all([
+          set(ref(rtdb, `connections/${user.uid}`), {
+            status: 'disconnected',
+            lastSeen: rtdbTimestamp(),
+            partnerId: null
+          }),
+          set(ref(rtdb, `status/${user.uid}`), {
+            state: 'offline',
+            last_changed: rtdbTimestamp()
+          })
+        ]).catch(console.error);
+      }
+    };
+  }, [user?.uid, partner?.uid]);
+
+  // Add listener for incoming connections
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    // Listen for changes to my user document in Firestore
+    const userDocRef = doc(db, 'users', user.uid);
+    const unsubscribe = onValue(ref(rtdb, `connections`), async (snapshot) => {
+      const connections = snapshot.val();
+      
+      try {
+        // Get the latest user data from Firestore
+        const userDoc = await getDoc(userDocRef);
+        const userData = userDoc.data();
+        
+        // If we have a partnerId in Firestore
+        if (userData?.partnerId) {
+          const partnerConnection = connections?.[userData.partnerId];
+          
+          // If partner is connected and we don't have partner data
+          if (partnerConnection?.status === 'connected' && !partner) {
+            // Fetch partner data
+            const partnerDoc = await getDoc(doc(db, 'users', userData.partnerId));
+            if (partnerDoc.exists()) {
+              const partnerData = partnerDoc.data();
+              if (partnerData.partnerId === user.uid) {
+                setPartner(partnerData);
+                setDisconnectMessage(null);
+                
+                // Ensure our connection is also set
+                const myConnectionRef = ref(rtdb, `connections/${user.uid}`);
+                await set(myConnectionRef, {
+                  status: 'connected',
+                  lastSeen: rtdbTimestamp(),
+                  partnerId: userData.partnerId
+                });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error handling incoming connection:', err);
       }
     });
 
-    return () => off(userStatusRef);
+    return () => unsubscribe();
   }, [user?.uid]);
 
   // Initialize user data after sign up or sign in
@@ -370,193 +589,83 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Update the connect function to handle Firestore state properly
   const connectPartner = async (inviteCode) => {
     try {
       if (!isOnline) {
         throw new Error('You are currently offline. Please check your internet connection.');
       }
-      
-      setError(null);
-      const upperInviteCode = inviteCode.toUpperCase();
-      
-      const result = await retryOperation(async () => {
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef);
-        return getDocs(q);
-      });
-      
-      const now = Timestamp.now();
-      let partnerDoc = null;
-      
-      // Find the user with a matching valid invite code
-      for (const doc of result.docs) {
-        const userData = doc.data();
-        if (userData.inviteCodes) {
-          const validCode = userData.inviteCodes.find(
-            code => code.code === upperInviteCode && 
-                   !code.used && 
-                   code.expiresAt.toMillis() > now.toMillis()
-          );
-          
-          if (validCode) {
-            partnerDoc = { id: doc.id, data: userData };
-            break;
-          }
-        }
-      }
-      
-      if (!partnerDoc) {
-        throw new Error('Invalid or expired invite code');
-      }
-      
-      const partnerId = partnerDoc.id;
-      const partnerData = partnerDoc.data;
-      
-      if (partnerId === user.uid) {
-        throw new Error('Cannot connect with yourself');
+
+      if (!user) {
+        throw new Error('You must be logged in to connect with a partner.');
       }
 
-      if (partnerData.partnerId) {
-        throw new Error('This user is already connected with someone else');
+      if (partner?.uid) {
+        throw new Error('You are already connected with a partner. Please disconnect first.');
       }
 
-      // Update Firestore first
-      await retryOperation(async () => {
-        const batch = writeBatch(db);
-        
-        const partnerRef = doc(db, 'users', partnerId);
-        batch.update(partnerRef, {
-          partnerId: user.uid,
-          inviteCodes: partnerData.inviteCodes.map(code => 
-            code.code === upperInviteCode ? { ...code, used: true } : code
-          )
-        });
+      // Wait for any pending writes
+      await waitForPendingWrites(db);
 
-        const userRef = doc(db, 'users', user.uid);
-        batch.update(userRef, { partnerId });
-
-        return batch.commit();
-      });
-
-      // Then update RTDB for real-time status
-      const userStatusRef = ref(rtdb, `connections/${user.uid}`);
-      const partnerStatusRef = ref(rtdb, `connections/${partnerId}`);
-      
-      await Promise.all([
-        set(userStatusRef, {
-          partnerId: partnerId,
-          status: 'connected',
-          lastUpdated: serverTimestamp()
-        }),
-        set(partnerStatusRef, {
-          partnerId: user.uid,
-          status: 'connected',
-          lastUpdated: serverTimestamp()
+      // Query for users with matching invite code
+      const usersRef = collection(db, 'users');
+      const q = query(
+        usersRef,
+        where('inviteCodes', 'array-contains', {
+          code: inviteCode.toUpperCase(),
+          used: false,
+          expiresAt: where('>', Timestamp.now())
         })
-      ]);
+      );
 
-      // Set partner data immediately
-      setPartner(partnerData);
+      const querySnapshot = await getDocs(q);
+      
+      if (querySnapshot.empty) {
+        throw new Error('Invalid or expired invite code. Please try again with a valid code.');
+      }
+
+      const partnerDoc = querySnapshot.docs[0];
+      const partnerId = partnerDoc.id;
+
+      if (partnerId === user.uid) {
+        throw new Error('You cannot connect with yourself.');
+      }
+
+      // Wait for pending writes before starting batch
+      await waitForPendingWrites(db);
+
+      // Start a batch write
+      const batch = writeBatch(db);
+
+      // Update partner's document
+      const partnerRef = doc(db, 'users', partnerId);
+      batch.update(partnerRef, {
+        partnerId: user.uid,
+        'inviteCodes': arrayRemove(inviteCode)
+      });
+
+      // Update current user's document
+      const userRef = doc(db, 'users', user.uid);
+      batch.update(userRef, {
+        partnerId: partnerId
+      });
+
+      // Commit the batch
+      await batch.commit();
+
+      // Update RTDB connection status
+      const connectionRef = ref(rtdb, `connections/${user.uid}`);
+      await set(connectionRef, {
+        partnerId: partnerId,
+        lastActive: rtdbTimestamp()
+      });
+
+      return partnerId;
     } catch (err) {
       setError(err.message);
       throw err;
     }
   };
-
-  // Add real-time listener for connection status
-  useEffect(() => {
-    if (!user?.uid) return;
-
-    // Listen for connection changes
-    const connectionsRef = ref(rtdb, `connections`);
-    const unsubscribe = onValue(connectionsRef, async (snapshot) => {
-      const connections = snapshot.val();
-      
-      try {
-        // Get the latest user data from Firestore to check partnerId
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        const userData = userDoc.data();
-        const partnerId = userData?.partnerId;
-
-        // If user has no partner in Firestore, clear partner state
-        if (!partnerId) {
-          setPartner(null);
-          return;
-        }
-
-        // Check connection status
-        const myConnection = connections?.[user.uid];
-        const partnerConnection = connections?.[partnerId];
-
-        // Only show disconnection if both Firestore and RTDB indicate no connection
-        if (!myConnection || !partnerConnection || 
-            myConnection.status === 'disconnected' || 
-            partnerConnection.status === 'disconnected') {
-          
-          // Double check Firestore partner status before showing disconnect
-          const partnerDoc = await getDoc(doc(db, 'users', partnerId));
-          if (!partnerDoc.exists() || partnerDoc.data().partnerId !== user.uid) {
-            setPartner(null);
-            setDisconnectMessage('Your partner has disconnected');
-            
-            // Clean up the connection in Firestore
-            const batch = writeBatch(db);
-            batch.update(doc(db, 'users', user.uid), { partnerId: null });
-            if (partnerDoc.exists()) {
-              batch.update(doc(db, 'users', partnerId), { partnerId: null });
-            }
-            await batch.commit();
-            
-            // Clean up RTDB connections
-            await set(ref(rtdb, `connections/${user.uid}`), null);
-            await set(ref(rtdb, `connections/${partnerId}`), null);
-          }
-          return;
-        }
-
-        // If we reach here, the connection is valid
-        // Fetch and set partner data
-        const partnerDoc = await getDoc(doc(db, 'users', partnerId));
-        if (partnerDoc.exists()) {
-          const partnerData = partnerDoc.data();
-          if (partnerData.partnerId === user.uid) {
-            setPartner(partnerData);
-            setDisconnectMessage(null);
-          }
-        }
-      } catch (err) {
-        console.error('Error handling connection status:', err);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [user?.uid]);
-
-  // Handle disconnection cleanup
-  useEffect(() => {
-    if (!user?.uid || !partner?.uid) return;
-
-    const cleanup = async () => {
-      try {
-        const myConnectionRef = ref(rtdb, `connections/${user.uid}`);
-        await set(myConnectionRef, {
-          partnerId: partner.uid,
-          status: 'disconnected',
-          lastUpdated: serverTimestamp()
-        });
-      } catch (err) {
-        console.error('Error cleaning up connection:', err);
-      }
-    };
-
-    // Set up disconnect cleanup
-    window.addEventListener('beforeunload', cleanup);
-
-    return () => {
-      window.removeEventListener('beforeunload', cleanup);
-      cleanup();
-    };
-  }, [user?.uid, partner?.uid]);
 
   const generateInviteCode = async () => {
     try {
@@ -566,6 +675,10 @@ export const AuthProvider = ({ children }) => {
 
       if (!user) {
         throw new Error('You must be logged in to generate an invite code.');
+      }
+
+      if (partner?.uid) {
+        throw new Error('You are already connected with a partner. Please disconnect first to generate a new code.');
       }
 
       const code = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -581,28 +694,10 @@ export const AuthProvider = ({ children }) => {
 
       const userRef = doc(db, 'users', user.uid);
       
-      // First get current user data to clean up expired codes
-      const userDoc = await getDoc(userRef);
-      const userData = userDoc.data();
-      
-      // Initialize inviteCodes array if it doesn't exist
-      const currentCodes = userData.inviteCodes || [];
-      
-      // Filter out expired codes
-      const now = Timestamp.now();
-      const validCodes = currentCodes.filter(
-        code => !code.used && code.expiresAt.toMillis() > now.toMillis()
-      );
-      
-      // Add the new code
-      validCodes.push(inviteCode);
-
-      // Update with clean list of codes
-      await retryOperation(async () => 
-        updateDoc(userRef, {
-          inviteCodes: validCodes
-        })
-      );
+      // Update with single code
+      await updateDoc(userRef, {
+        inviteCodes: [inviteCode]
+      });
 
       setActiveInviteCode(inviteCode);
       return inviteCode;
@@ -612,48 +707,53 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Update the disconnect function to handle Firestore state properly
   const disconnectPartner = async () => {
     try {
-      if (!isOnline) {
-        throw new Error('You are currently offline. Please check your internet connection.');
+      if (!user) {
+        throw new Error('You must be logged in to disconnect.');
       }
 
-      if (!user || !partner) {
-        throw new Error('No active partnership to disconnect');
+      if (!partner?.uid) {
+        throw new Error('You are not currently connected with a partner.');
       }
 
-      setError(null);
+      // Wait for any pending writes to complete
+      await waitForPendingWrites(db);
 
-      // Update Firestore first
-      await retryOperation(async () => {
-        const batch = writeBatch(db);
-        
-        // Update both users' documents
-        const userRef = doc(db, 'users', user.uid);
-        const partnerRef = doc(db, 'users', partner.uid);
-        
-        batch.update(userRef, { partnerId: null });
-        batch.update(partnerRef, { partnerId: null });
-
-        await batch.commit();
-      });
-
-      // Then update RTDB for immediate effect
+      // First clean up RTDB connections
       const userConnectionRef = ref(rtdb, `connections/${user.uid}`);
       const partnerConnectionRef = ref(rtdb, `connections/${partner.uid}`);
       
       await Promise.all([
-        set(userConnectionRef, null),
-        set(partnerConnectionRef, null)
+        remove(userConnectionRef),
+        remove(partnerConnectionRef)
       ]);
 
-      // Clear local state
-      setPartner(null);
-      setDisconnectMessage('You have disconnected from your partner');
+      // Then update Firestore documents
+      const batch = writeBatch(db);
       
-      console.log('Partnership successfully disconnected');
+      const userRef = doc(db, 'users', user.uid);
+      batch.update(userRef, {
+        partnerId: null,
+        inviteCodes: []
+      });
+
+      const partnerRef = doc(db, 'users', partner.uid);
+      batch.update(partnerRef, {
+        partnerId: null,
+        inviteCodes: []
+      });
+
+      // Wait for pending writes before committing
+      await waitForPendingWrites(db);
+      await batch.commit();
+
+      // Finally update local state
+      setPartner(null);
+      setActiveInviteCode(null);
+      setError(null);
     } catch (err) {
-      console.error('Error disconnecting partnership:', err);
       setError(err.message);
       throw err;
     }

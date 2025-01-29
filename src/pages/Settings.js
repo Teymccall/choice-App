@@ -316,7 +316,7 @@ const Settings = () => {
       await updateProfile(user, {
         displayName: profile.displayName.trim()
       });
-      
+
       // Update Realtime Database
       const profileRef = ref(rtdb, `userSettings/${user.uid}/profile`);
       await update(profileRef, {
@@ -553,7 +553,7 @@ const Settings = () => {
           <p className="mt-2 text-base sm:text-lg text-gray-600 dark:text-gray-400">
             Customize your experience
           </p>
-        </div>
+          </div>
 
         {/* Settings Cards */}
         <div className="space-y-4 sm:space-y-6">
@@ -562,30 +562,30 @@ const Settings = () => {
             <div className="flex items-center mb-4">
               <div className="inline-flex p-2 rounded-lg bg-primary-500">
                 <UserIcon className="h-5 w-5 text-white" />
-              </div>
+                    </div>
               <h2 className="ml-3 text-lg font-medium text-gray-900 dark:text-white">Profile Settings</h2>
-            </div>
+                    </div>
             
-            <div className="space-y-4">
+                  <div className="space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                <div>
+                    <div>
                   <h3 className="text-sm font-medium text-gray-900 dark:text-white">Display Name</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">This is how others will see you</p>
-                </div>
-                <input
-                  type="text"
-                  value={profile.displayName}
-                  onChange={(e) => setProfile(prev => ({ ...prev, displayName: e.target.value }))}
+                    </div>
+                      <input
+                        type="text"
+                        value={profile.displayName}
+                        onChange={(e) => setProfile(prev => ({ ...prev, displayName: e.target.value }))}
                   className="w-full sm:w-64 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-600 dark:text-white"
                   placeholder={user?.displayName || 'Your name'}
-                />
-              </div>
+                      />
+                    </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                 <div>
                   <h3 className="text-sm font-medium text-gray-900 dark:text-white">Email</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Your email address</p>
-                </div>
+                  </div>
                 <div className="text-sm text-gray-900 dark:text-white font-medium">
                   {user?.email}
                 </div>
@@ -642,7 +642,7 @@ const Settings = () => {
                 <BellIcon className="h-5 w-5 text-white" />
               </div>
               <h2 className="ml-3 text-lg font-medium text-gray-900 dark:text-white">Notifications</h2>
-            </div>
+              </div>
 
             <div className="space-y-4">
               {Object.entries(notifications).map(([key, value]) => (
@@ -655,7 +655,7 @@ const Settings = () => {
                       {`Get notified about ${key.split(/(?=[A-Z])/).join(' ').toLowerCase()}`}
                     </p>
                   </div>
-                  <button
+                          <button
                     onClick={() => handleNotificationChange(key)}
                     disabled={isSubmitting}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
@@ -668,8 +668,8 @@ const Settings = () => {
                         value ? 'translate-x-6' : 'translate-x-1'
                       }`}
                     />
-                  </button>
-                </div>
+                          </button>
+                        </div>
               ))}
             </div>
           </div>
@@ -688,15 +688,15 @@ const Settings = () => {
                 <div>
                   <h3 className="text-sm font-medium text-gray-900 dark:text-white">Change Password</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Update your password regularly for security</p>
-                </div>
-                <button
+                      </div>
+                    <button
                   onClick={handlePasswordChange}
-                  disabled={isSubmitting || !isOnline}
+                      disabled={isSubmitting || !isOnline}
                   className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transform transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
+                    >
                   <KeyIcon className="h-4 w-4 mr-1.5" />
                   Change Password
-                </button>
+                    </button>
               </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
@@ -730,38 +730,38 @@ const Settings = () => {
                 <div>
                   <h3 className="text-sm font-medium text-gray-900 dark:text-white">View User Guide</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Learn how to use all features of the app</p>
-                </div>
-                <button
-                  onClick={() => setShowManual(!showManual)}
+                    </div>
+                    <button
+                      onClick={() => setShowManual(!showManual)}
                   className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-600 hover:bg-gray-50 dark:hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transform transition-all duration-200 hover:scale-105"
-                >
-                  {showManual ? 'Hide Manual' : 'Show Manual'}
-                </button>
-              </div>
+                    >
+                      {showManual ? 'Hide Manual' : 'Show Manual'}
+                    </button>
+                  </div>
 
-              {showManual && (
+                  {showManual && (
                 <div className="space-y-6 animate-fade-in">
-                  {manualSections.map((section, index) => (
+                      {manualSections.map((section, index) => (
                     <div 
                       key={section.title} 
                       className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg animate-slide-up"
                       style={{ animationDelay: `${index * 100}ms` }}
                     >
                       <h3 className="text-base font-medium text-gray-900 dark:text-white mb-3">{section.title}</h3>
-                      <ul className="space-y-2">
-                        {section.content.map((item, itemIndex) => (
-                          <li key={itemIndex} className="flex items-start text-sm text-gray-600 dark:text-gray-400">
-                            <ArrowRightIcon className="h-5 w-5 text-primary-500 dark:text-primary-400 mr-2 flex-shrink-0" />
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
+                          <ul className="space-y-2">
+                            {section.content.map((item, itemIndex) => (
+                              <li key={itemIndex} className="flex items-start text-sm text-gray-600 dark:text-gray-400">
+                                <ArrowRightIcon className="h-5 w-5 text-primary-500 dark:text-primary-400 mr-2 flex-shrink-0" />
+                                {item}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
 
           {/* Clear Data */}
           <div className="bg-white dark:bg-gray-800 shadow p-4 sm:p-6 transform hover:scale-[1.01] hover:shadow-lg transition-all duration-200">
@@ -770,22 +770,22 @@ const Settings = () => {
                 <TrashIcon className="h-5 w-5 text-white" />
               </div>
               <h2 className="ml-3 text-lg font-medium text-gray-900 dark:text-white">Clear Data</h2>
-            </div>
+                  </div>
 
-            <div className="space-y-4">
+                  <div className="space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                 <div>
                   <h3 className="text-sm font-medium text-gray-900 dark:text-white">Clear All Topics</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Remove all topics and related data. This action cannot be undone.</p>
                 </div>
-                <button
+                      <button
                   onClick={handleClearTopics}
                   disabled={isClearing || !isOnline || !partner?.email}
                   className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transform transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <TrashIcon className="h-4 w-4 mr-1.5" />
                   {isClearing ? 'Clearing...' : 'Clear All'}
-                </button>
+                      </button>
               </div>
             </div>
           </div>
@@ -796,11 +796,11 @@ const Settings = () => {
           <div className="fixed bottom-4 right-4 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400 px-4 py-2 rounded-lg shadow-lg flex items-center">
             <CheckCircleIcon className="h-5 w-5 mr-1.5 animate-bounce-in" />
             Saving changes...
-          </div>
+      </div>
         )}
 
-        {/* Status Messages */}
-        {(error || successMessage) && (
+      {/* Status Messages */}
+      {(error || successMessage) && (
           <div className={`fixed bottom-4 right-4 px-4 py-2 rounded-lg shadow-lg flex items-center ${
             error ? 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-400' : 
                    'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400'
@@ -811,8 +811,8 @@ const Settings = () => {
               <CheckCircleIcon className="h-5 w-5 mr-1.5" />
             )}
             {error || successMessage}
-          </div>
-        )}
+        </div>
+      )}
       </div>
     </div>
   );

@@ -15,11 +15,11 @@ import { rtdb } from '../firebase/config';
 const FloatingNav = () => {
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
-  const [pendingResponses, setPendingResponses] = useState(0);
-  const [unreadChats, setUnreadChats] = useState(0);
-  const [newTopics, setNewTopics] = useState(0);
   const menuRef = useRef(null);
   const { user, partner } = useAuth();
+  const [unreadChats, setUnreadChats] = React.useState(0);
+  const [pendingResponses, setPendingResponses] = React.useState(0);
+  const [newTopics, setNewTopics] = React.useState(0);
 
   const navItems = [
     { path: '/dashboard', name: 'Dashboard', icon: HomeIcon },

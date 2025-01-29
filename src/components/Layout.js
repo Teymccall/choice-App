@@ -1,10 +1,10 @@
 import React, { useEffect } from 'react';
-import Navigation from './Navigation';
-import FloatingNav from './FloatingNav';
 import { useAuth } from '../context/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { ref, onValue, get } from 'firebase/database';
 import { rtdb } from '../firebase/config';
+import FloatingNav from './FloatingNav';
+import Navigation from './Navigation';
 
 const Layout = ({ children }) => {
   const { user } = useAuth();

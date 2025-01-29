@@ -60,11 +60,17 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
     }
   }, [message.id, messageRefs]);
 
-  const handleReplyClick = () => {
+  const handleReplyClick = (e) => {
+    e.stopPropagation(); // Prevent event bubbling
     if (message.replyTo && messageRefs.current[message.replyTo.id]) {
       const element = messageRefs.current[message.replyTo.id].current;
       if (element) {
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Add a temporary highlight effect
+        element.classList.add('bg-primary-50', 'dark:bg-primary-900/20');
+        setTimeout(() => {
+          element.classList.remove('bg-primary-50', 'dark:bg-primary-900/20');
+        }, 1000);
       }
     }
   };
@@ -96,7 +102,7 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
   return (
     <div 
       ref={messageRef}
-      className={`flex w-full mb-1.5 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+      className={`flex w-full mb-1.5 ${isOwnMessage ? 'justify-end' : 'justify-start'} transition-colors duration-200`}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -113,7 +119,7 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
                 ? 'bg-[#0b846d]/[0.08] text-[#0b846d]' 
                 : 'bg-[#667781]/[0.08] text-[#667781]'
               }
-              rounded-[7px] rounded-bl-none w-full
+              rounded-[7px] rounded-bl-none w-full hover:opacity-80 transition-opacity
             `}
             onClick={handleReplyClick}
           >
@@ -165,19 +171,21 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
               </div>
             )}
             {message.text && (
-              <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] pr-2 ${
-                isOwnMessage 
-                  ? 'text-[#111b21] dark:text-[#e9edef]' 
-                  : 'text-[#111b21] dark:text-[#e9edef]'
-              }`}>
-                {message.text}
-              </p>
+              <div className="flex flex-col">
+                <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] ${
+                  isOwnMessage 
+                    ? 'text-[#111b21] dark:text-[#e9edef]' 
+                    : 'text-[#111b21] dark:text-[#e9edef]'
+                }`}>
+                  {message.text}
+                </p>
+                <div className="flex justify-end mt-1">
+                  <span className="text-[11px] text-[#667781] dark:text-[#8696a0] leading-none">
+                    {timeString}
+                  </span>
+                </div>
+              </div>
             )}
-            <div className={`absolute bottom-[4px] right-[7px] flex items-center gap-1`}>
-              <span className="text-[11px] text-[#667781] dark:text-[#8696a0] leading-none">
-                {timeString}
-              </span>
-            </div>
           </div>
         </div>
       </div>
@@ -243,23 +251,47 @@ const TopicChat = ({ topic, onClose }) => {
 
       localStorage.setItem(`lastRead_${topic.id}_${user.uid}`, Date.now().toString());
 
-      const messagesList = Object.entries(data)
-        .map(([id, message]) => ({
-          id,
-          ...message,
-        }))
-        .filter(message => 
-          (message.userId === user.uid && message.partnerId === partner.uid) ||
-          (message.userId === partner.uid && message.partnerId === user.uid)
-        )
-        .sort((a, b) => a.timestamp - b.timestamp);
+      try {
+        const messagesList = Object.entries(data)
+          .map(([id, message]) => ({
+            id,
+            ...message,
+            timestamp: message.timestamp || Date.now() // Ensure timestamp exists
+          }))
+          .filter(message => 
+            // Include messages where either user is the sender or receiver
+            (message.userId === user.uid && message.partnerId === partner.uid) ||
+            (message.userId === partner.uid && message.partnerId === user.uid)
+          )
+          .sort((a, b) => {
+            // Ensure proper timestamp comparison
+            const timestampA = typeof a.timestamp === 'number' ? a.timestamp : a.timestamp?.toMillis?.() || 0;
+            const timestampB = typeof b.timestamp === 'number' ? b.timestamp : b.timestamp?.toMillis?.() || 0;
+            return timestampA - timestampB;
+          });
 
-      setMessages(messagesList);
+        console.log('Received messages:', messagesList.length); // Debug log
+        setMessages(messagesList);
+        setLoading(false);
+        setTimeout(scrollToBottom, 100);
+      } catch (err) {
+        console.error('Error processing messages:', err);
+        setError('Error loading messages. Please try refreshing.');
+        setLoading(false);
+      }
+    }, (error) => {
+      console.error('Error in chat listener:', error);
+      setError('Error connecting to chat. Please check your connection.');
       setLoading(false);
-      setTimeout(scrollToBottom, 100);
     });
 
-    return () => unsubscribe();
+    return () => {
+      try {
+        unsubscribe();
+      } catch (err) {
+        console.error('Error cleaning up chat listener:', err);
+      }
+    };
   }, [topic?.id, partner?.uid, user?.uid]);
 
   useEffect(() => {
@@ -564,217 +596,199 @@ const TopicChat = ({ topic, onClose }) => {
   }
 
   return (
-    <div className="fixed inset-0 bg-[#efeae2] dark:bg-[#0c1317] z-50 flex flex-col max-h-[100dvh]">
-      {/* Header */}
-      <div className="flex-none px-4 py-2 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db] dark:border-[#2f3b44] flex items-center justify-between">
-        <div className="flex items-center space-x-3 min-w-0 flex-1">
-          <div className="flex flex-col min-w-0 flex-1">
-            <h3 className="text-[16px] font-medium text-[#111b21] dark:text-[#e9edef] leading-tight truncate">
-              {partner?.displayName || 'Partner'}
-            </h3>
-            <p className="text-[13px] text-[#667781] dark:text-[#8696a0] leading-tight mt-0.5 truncate">
-              {topic.question}
-            </p>
+    <div className="fixed inset-0 bg-[#efeae2] dark:bg-[#0c1317] z-50">
+      <div className="h-full flex flex-col">
+        {/* Header - now with sticky positioning */}
+        <div className="sticky top-0 z-10 flex-none px-3 sm:px-4 py-2 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db] dark:border-[#2f3b44] flex items-center justify-between">
+          <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
+            <div className="flex flex-col min-w-0 flex-1">
+              <h3 className="text-[15px] sm:text-[16px] font-medium text-[#111b21] dark:text-[#e9edef] leading-tight truncate">
+                {partner?.displayName || 'Partner'}
+              </h3>
+              <p className="text-[12px] sm:text-[13px] text-[#667781] dark:text-[#8696a0] leading-tight mt-0.5 truncate">
+                {topic.question}
+              </p>
+            </div>
           </div>
+          <button
+            onClick={onClose}
+            className="flex-none p-1.5 sm:p-2 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors ml-2"
+          >
+            <XMarkIcon className="h-5 w-5" />
+          </button>
         </div>
-        <button
-          onClick={onClose}
-          className="flex-none p-2 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors ml-2"
-        >
-          <XMarkIcon className="h-5 w-5" />
-        </button>
-      </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-[5%] py-4 space-y-1 bg-[#efeae2] dark:bg-[#0c1317] min-h-0">
-        {messages.map((message) => (
-          <Message
-            key={message.id}
-            message={message}
-            isOwnMessage={message.userId === user.uid}
-            user={user}
-            onReply={handleReply}
-            onImageClick={setViewingImage}
-            messageRefs={messageRefs}
-          />
-        ))}
-        {partnerTyping && (
-          <div className="flex items-center space-x-2 text-[#667781] dark:text-[#8696a0] animate-fade-in">
-            <span className="text-sm">Partner is typing</span>
-            <div className="flex space-x-1">
-              <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-              <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '200ms' }}></span>
-              <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '400ms' }}></span>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input area */}
-      <div className="flex-none bg-[#f0f2f5] dark:bg-[#202c33] px-4 py-2 relative">
-        {replyingTo && (
-          <div className="flex items-center justify-between bg-[#fff] dark:bg-[#2a3942] px-4 py-2 -mb-1">
-            <div className="flex items-start space-x-2 min-w-0 flex-1">
-              <div className="w-0.5 h-full bg-[#00a884] self-stretch flex-none"/>
-              <div className="flex flex-col min-w-0 py-0.5">
-                <span className="text-[#00a884] dark:text-[#00a884] text-[13px] font-medium">
-                  {replyingTo.userId === user.uid ? 'You' : 'Partner'}
-                </span>
-                <span className="text-[#667781] dark:text-[#8696a0] text-[13px] truncate">
-                  {replyingTo.text || 'Media message'}
-                </span>
-              </div>
-            </div>
-            <button 
-              onClick={() => setReplyingTo(null)} 
-              className="p-1 -mr-2 text-[#667781] dark:text-[#8696a0] hover:text-[#3b4a54] dark:hover:text-[#e9edef] flex-none"
-            >
-              <XMarkIcon className="h-5 w-5" />
-            </button>
-          </div>
-        )}
-        
-        <div className="relative flex items-start space-x-2">
-          <div className="relative flex-none self-end">
-            <button
-              onClick={handleMediaClick}
-              className="p-2 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef]"
-              disabled={uploadingMedia}
-            >
-              {uploadingMedia ? (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#00a884]"></div>
-                </div>
-              ) : (
-                <PhotoIcon className="h-6 w-6" />
-              )}
-            </button>
-
-            {/* Media menu */}
-            {showMediaMenu && (
-              <div 
-                ref={mediaMenuRef}
-                className="absolute bottom-full left-0 mb-[2px] w-[186px] bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden z-50"
-              >
-                <div className="py-[6px]">
-                  <label
-                    className="flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] cursor-pointer transition-colors"
-                    onClick={() => {
-                      fileInputRef.current?.click();
-                      setShowMediaMenu(false);
-                    }}
-                  >
-                    <PhotoIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
-                    <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Photos & Videos</span>
-                  </label>
-
-                  <button
-                    onClick={() => {
-                      handleCameraClick();
-                      setShowMediaMenu(false);
-                    }}
-                    className="w-full flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] transition-colors"
-                    disabled={uploadingMedia}
-                  >
-                    <CameraIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
-                    <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Camera</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <textarea
-              ref={inputRef}
-              value={newMessage}
-              onChange={handleMessageChange}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage();
-                }
-              }}
-              placeholder="Type a message"
-              className="w-full rounded-lg pl-4 pr-4 py-2 bg-white dark:bg-[#2a3942] focus:outline-none text-[#111b21] dark:text-[#d1d7db] placeholder-[#667781] dark:placeholder-[#8696a0] resize-none overflow-y-auto"
-              style={{ 
-                minHeight: '42px',
-                maxHeight: '100px'
-              }}
+        {/* Messages - with adjusted height calculation */}
+        <div className="flex-1 overflow-y-auto px-[3%] sm:px-[5%] py-3 sm:py-4 space-y-1 bg-[#efeae2] dark:bg-[#0c1317]">
+          {messages.map((message) => (
+            <Message
+              key={message.id}
+              message={message}
+              isOwnMessage={message.userId === user.uid}
+              user={user}
+              onReply={handleReply}
+              onImageClick={setViewingImage}
+              messageRefs={messageRefs}
             />
-          </div>
-
-          <div className="flex-none self-end">
-            <button
-              onClick={handleSendMessage}
-              disabled={!newMessage.trim() && !selectedFile}
-              className="p-2 text-[#54656f] hover:text-[#00a884] dark:text-[#aebac1] dark:hover:text-[#00a884] disabled:opacity-50 disabled:hover:text-[#54656f] dark:disabled:hover:text-[#aebac1]"
-            >
-              <PaperAirplaneIcon className="h-6 w-6" />
-            </button>
-          </div>
+          ))}
+          {partnerTyping && (
+            <div className="flex items-center space-x-2 text-[#667781] dark:text-[#8696a0] animate-fade-in">
+              <span className="text-sm">Partner is typing</span>
+              <div className="flex space-x-1">
+                <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '200ms' }}></span>
+                <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '400ms' }}></span>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
 
-        {/* Hidden file inputs */}
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileSelect}
-          accept="image/*,video/*"
-          className="hidden"
-          aria-label="Upload media"
-        />
-
-        <input
-          type="file"
-          ref={cameraInputRef}
-          onChange={handleFileSelect}
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          aria-label="Take photo"
-        />
-
-        {/* Media Preview */}
-        {selectedFile && (
-          <div className="absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden">
-            <div className="p-3 flex items-center justify-between">
-              <div className="flex items-center space-x-3 min-w-0 flex-1">
-                {previewUrl && (
-                  <img 
-                    src={previewUrl} 
-                    alt="Preview" 
-                    className="h-16 w-16 object-cover rounded-lg flex-none"
-                  />
-                )}
-                <span className="text-sm text-[#111b21] dark:text-[#e9edef] truncate">
-                  {selectedFile.name}
-                </span>
+        {/* Input area - now with sticky positioning */}
+        <div className="sticky bottom-0 z-10 flex-none bg-[#f0f2f5] dark:bg-[#202c33] px-2 sm:px-4 py-2 relative">
+          {replyingTo && (
+            <div className="flex items-center justify-between bg-[#fff] dark:bg-[#2a3942] px-3 sm:px-4 py-2 -mb-1 mx-1 rounded-t-lg">
+              <div className="flex items-start space-x-2 min-w-0 flex-1">
+                <div className="w-0.5 h-full bg-[#00a884] self-stretch flex-none"/>
+                <div className="flex flex-col min-w-0 py-0.5">
+                  <span className="text-[#00a884] dark:text-[#00a884] text-[12px] sm:text-[13px] font-medium">
+                    {replyingTo.userId === user.uid ? 'You' : 'Partner'}
+                  </span>
+                  <span className="text-[#667781] dark:text-[#8696a0] text-[12px] sm:text-[13px] truncate">
+                    {replyingTo.text || 'Media message'}
+                  </span>
+                </div>
               </div>
+              <button 
+                onClick={() => setReplyingTo(null)} 
+                className="p-1 -mr-1 text-[#667781] dark:text-[#8696a0] hover:text-[#3b4a54] dark:hover:text-[#e9edef] flex-none"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+          )}
+          
+          <div className="relative flex items-start space-x-1 sm:space-x-2 mx-1">
+            <div className="relative flex-none self-end">
               <button
-                onClick={() => {
-                  setSelectedFile(null);
-                  setPreviewUrl(null);
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = '';
-                  }
-                }}
-                className="p-1.5 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-[#f0f2f5] dark:hover:bg-[#182229] flex-none ml-2"
+                onClick={handleMediaClick}
+                className="p-1.5 sm:p-2 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef]"
                 disabled={uploadingMedia}
               >
-                <XCircleIcon className="h-5 w-5" />
+                {uploadingMedia ? (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#00a884]"></div>
+                  </div>
+                ) : (
+                  <PhotoIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+                )}
+              </button>
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <textarea
+                ref={inputRef}
+                value={newMessage}
+                onChange={handleMessageChange}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
+                placeholder="Type a message"
+                className="w-full rounded-lg pl-3 sm:pl-4 pr-3 sm:pr-4 py-2 bg-white dark:bg-[#2a3942] focus:outline-none text-[14px] sm:text-[15px] text-[#111b21] dark:text-[#d1d7db] placeholder-[#667781] dark:placeholder-[#8696a0] resize-none overflow-y-auto"
+                style={{ 
+                  minHeight: '40px',
+                  maxHeight: '100px'
+                }}
+              />
+            </div>
+
+            <div className="flex-none self-end">
+              <button
+                onClick={handleSendMessage}
+                disabled={!newMessage.trim() && !selectedFile}
+                className="p-1.5 sm:p-2 text-[#54656f] hover:text-[#00a884] dark:text-[#aebac1] dark:hover:text-[#00a884] disabled:opacity-50 disabled:hover:text-[#54656f] dark:disabled:hover:text-[#aebac1]"
+              >
+                <PaperAirplaneIcon className="h-5 w-5 sm:h-6 sm:w-6" />
               </button>
             </div>
           </div>
-        )}
 
-        {/* Error Message */}
-        {error && (
-          <div className="absolute bottom-full left-0 right-0 mb-2 bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-200 p-3 rounded-lg shadow-lg">
-            {error}
-          </div>
-        )}
+          {/* Media menu */}
+          {showMediaMenu && (
+            <div 
+              ref={mediaMenuRef}
+              className="absolute bottom-full left-2 sm:left-4 mb-[2px] w-[186px] bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden z-50"
+            >
+              <div className="py-[6px]">
+                <label
+                  className="flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] cursor-pointer transition-colors"
+                  onClick={() => {
+                    fileInputRef.current?.click();
+                    setShowMediaMenu(false);
+                  }}
+                >
+                  <PhotoIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
+                  <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Photos & Videos</span>
+                </label>
+
+                <button
+                  onClick={() => {
+                    handleCameraClick();
+                    setShowMediaMenu(false);
+                  }}
+                  className="w-full flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] transition-colors"
+                  disabled={uploadingMedia}
+                >
+                  <CameraIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
+                  <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Camera</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Media Preview */}
+          {selectedFile && (
+            <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden">
+              <div className="p-2 sm:p-3 flex items-center justify-between">
+                <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
+                  {previewUrl && (
+                    <img 
+                      src={previewUrl} 
+                      alt="Preview" 
+                      className="h-14 w-14 sm:h-16 sm:w-16 object-cover rounded-lg flex-none"
+                    />
+                  )}
+                  <span className="text-sm text-[#111b21] dark:text-[#e9edef] truncate">
+                    {selectedFile.name}
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedFile(null);
+                    setPreviewUrl(null);
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = '';
+                    }
+                  }}
+                  className="p-1.5 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-[#f0f2f5] dark:hover:bg-[#182229] flex-none ml-2"
+                  disabled={uploadingMedia}
+                >
+                  <XCircleIcon className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {error && (
+            <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-200 p-2 sm:p-3 rounded-lg shadow-lg">
+              {error}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Image Viewer Modal */}
