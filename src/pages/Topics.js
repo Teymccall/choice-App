@@ -11,13 +11,14 @@ import {
   RocketLaunchIcon,
   ChatBubbleLeftRightIcon,
   XMarkIcon,
+  HashtagIcon,
 } from '@heroicons/react/24/outline';
 import { ref, onValue, push, update, serverTimestamp } from 'firebase/database';
 import { rtdb } from '../firebase/config';
 import TopicChat from '../components/TopicChat';
 
 const CATEGORY_ICONS = {
-  'All': TagIcon,
+  'All': HashtagIcon,
   'Relationship': HeartIcon,
   'Household': HomeIcon,
   'Future': RocketLaunchIcon,

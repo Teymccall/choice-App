@@ -23,11 +23,9 @@ import {
   arrayUnion,
   arrayRemove,
   serverTimestamp as firestoreTimestamp,
-  enableIndexedDbPersistence,
-  disableNetwork,
   enableNetwork,
+  disableNetwork,
   waitForPendingWrites,
-  CACHE_SIZE_UNLIMITED
 } from 'firebase/firestore';
 import { 
   ref, 
@@ -47,8 +45,6 @@ import {
   TIMEOUT, 
   MAX_RETRY_ATTEMPTS, 
   INITIAL_RETRY_DELAY,
-  enableFirestoreNetwork,
-  disableFirestoreNetwork
 } from '../firebase/config';
 
 const AuthContext = createContext(null);
@@ -84,23 +80,50 @@ const retryOperation = async (operation, retryCount = 0) => {
   }
 };
 
-// Add connection management functions
-const initializeFirestore = async () => {
+let firestoreInitialized = false;
+let networkEnabled = true;
+
+const setNetworkEnabled = async (enabled) => {
+  if (enabled === networkEnabled) return;
+  
   try {
-    // Enable offline persistence with unlimited cache
-    await enableIndexedDbPersistence(db, {
-      cacheSizeBytes: CACHE_SIZE_UNLIMITED
-    }).catch((err) => {
-      if (err.code === 'failed-precondition') {
-        // Multiple tabs open, persistence can only be enabled in one tab at a time
-        console.warn('Persistence disabled: multiple tabs open');
-      } else if (err.code === 'unimplemented') {
-        // The current browser doesn't support persistence
-        console.warn('Persistence not supported by browser');
-      }
-    });
+    if (enabled) {
+      await enableNetwork(db);
+    } else {
+      await disableNetwork(db);
+    }
+    networkEnabled = enabled;
   } catch (err) {
-    console.error('Error initializing Firestore:', err);
+    console.error('Error setting network state:', err);
+  }
+};
+
+// Simplified write operation
+const safeWrite = async (operation) => {
+  try {
+    return await operation();
+  } catch (error) {
+    console.error('Error in write operation:', error);
+    throw error;
+  }
+};
+
+// Add a cleanup function for Firestore state
+const cleanupFirestore = async () => {
+  try {
+    // Disable network first to prevent new operations
+    await disableNetwork(db);
+    
+    // Clear any pending writes
+    await waitForPendingWrites(db);
+    
+    // Reset initialization flag
+    firestoreInitialized = false;
+    
+    // Re-enable network
+    await enableNetwork(db);
+  } catch (err) {
+    console.error('Error cleaning up Firestore:', err);
   }
 };
 
@@ -148,118 +171,34 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Initialize Firestore when the app starts
+  // Handle auth state changes
   useEffect(() => {
-    initializeFirestore();
-  }, []);
+    let mounted = true;
+    let authTimeout = null;
 
-  // Update online/offline handling
-  useEffect(() => {
-    const handleConnectionChange = async () => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       try {
-        if (navigator.onLine) {
-          await enableNetwork(db);
-          setIsOnline(true);
-        } else {
-          await disableNetwork(db);
-          setIsOnline(false);
+        if (!mounted) return;
+
+        if (authTimeout) {
+          clearTimeout(authTimeout);
         }
-      } catch (err) {
-        console.error('Error handling connection change:', err);
-      }
-    };
 
-    window.addEventListener('online', handleConnectionChange);
-    window.addEventListener('offline', handleConnectionChange);
+        authTimeout = setTimeout(async () => {
+          if (!mounted) return;
 
-    // Initial check
-    handleConnectionChange();
-
-    return () => {
-      window.removeEventListener('online', handleConnectionChange);
-      window.removeEventListener('offline', handleConnectionChange);
-    };
-  }, []);
-
-  // Listen for auth state changes
-  useEffect(() => {
-    let unsubscribe = () => {};
-
-    const setupAuthListener = async () => {
-      unsubscribe = onAuthStateChanged(auth, async (user) => {
-        try {
           if (user) {
-            // First set basic user data immediately
-            const basicUserData = {
+            setUser({
               uid: user.uid,
               email: user.email,
-              displayName: user.displayName,
-            };
-            setUser(basicUserData);
-
-            if (isOnline) {
+              displayName: user.displayName
+            });
+            
+            if (navigator.onLine) {
               try {
-                const userDocRef = doc(db, 'users', user.uid);
-                const userDoc = await retryOperation(async () => getDoc(userDocRef));
-                
-                if (userDoc.exists()) {
-                  const userData = userDoc.data();
-                  
-                  // Check for valid invite codes
-                  if (userData.inviteCodes?.length > 0) {
-                    const now = Timestamp.now();
-                    const validCodes = userData.inviteCodes.filter(
-                      code => !code.used && code.expiresAt.toMillis() > now.toMillis()
-                    );
-                    
-                    if (validCodes.length > 0) {
-                      setActiveInviteCode(validCodes[validCodes.length - 1]);
-                    } else {
-                      setActiveInviteCode(null);
-                    }
-                  }
-                  
-                  setUser(prevUser => ({
-                    ...prevUser,
-                    ...userData,
-                  }));
-
-                  // Only try to fetch partner data if we have a partnerId
-                  if (userData?.partnerId) {
-                    try {
-                      const partnerDoc = await retryOperation(async () => 
-                        getDoc(doc(db, 'users', userData.partnerId))
-                      );
-                      if (partnerDoc.exists()) {
-                        setPartner(partnerDoc.data());
-                      }
-                    } catch (partnerErr) {
-                      console.error('Error fetching partner data:', partnerErr);
-                    }
-                  }
-                } else {
-                  // If user document doesn't exist, create one
-                  const newUserData = {
-                    ...basicUserData,
-                    inviteCodes: [],
-                    createdAt: Timestamp.now(),
-                  };
-                  
-                  try {
-                    await retryOperation(async () => 
-                      setDoc(userDocRef, newUserData)
-                    );
-                    setUser(prevUser => ({
-                      ...prevUser,
-                      ...newUserData,
-                    }));
-                  } catch (createErr) {
-                    console.error('Error creating user document:', createErr);
-                  }
-                }
+                await initializeUserData(user);
               } catch (err) {
-                console.error('Error fetching user data:', err);
-                // Keep using basic user data if fetch fails
+                console.error('Error initializing user data:', err);
               }
             }
           } else {
@@ -267,219 +206,36 @@ export const AuthProvider = ({ children }) => {
             setPartner(null);
             setActiveInviteCode(null);
           }
-        } catch (err) {
-          console.error('Error in auth state change:', err);
-          if (user) {
-            setUser({
-              uid: user.uid,
-              email: user.email,
-              displayName: user.displayName,
-            });
-          }
-        } finally {
+          setIsLoading(false);
+        }, 1000);
+      } catch (err) {
+        console.error('Auth state change error:', err);
+        if (mounted) {
           setIsLoading(false);
         }
-      });
-    };
-
-    setupAuthListener();
-    return () => unsubscribe();
-  }, [isOnline]);
-
-  // Enhanced connection status management
-  useEffect(() => {
-    if (!user?.uid) return;
-
-    let isSubscribed = true;
-    const cleanupFunctions = [];
-
-    const setupConnection = async () => {
-      try {
-        // Create references
-        const userStatusRef = ref(rtdb, `status/${user.uid}`);
-        const userConnectionRef = ref(rtdb, '.info/connected');
-        const connectedRef = ref(rtdb, `connections/${user.uid}`);
-
-        // Set up connection listener
-        const handleConnection = async (snapshot) => {
-          if (!isSubscribed) return;
-          if (snapshot.val() !== true) return;
-
-          try {
-            // Set up disconnect handlers first
-            await Promise.all([
-              onDisconnect(connectedRef).set({
-                status: 'disconnected',
-                lastSeen: rtdbTimestamp(),
-                partnerId: partner?.uid || null
-              }),
-              onDisconnect(userStatusRef).set({
-                state: 'offline',
-                last_changed: rtdbTimestamp()
-              })
-            ]);
-
-            // Then set online status
-            await Promise.all([
-              set(connectedRef, {
-                status: 'connected',
-                lastSeen: rtdbTimestamp(),
-                partnerId: partner?.uid || null
-              }),
-              set(userStatusRef, {
-                state: 'online',
-                last_changed: rtdbTimestamp()
-              })
-            ]);
-          } catch (err) {
-            console.error('Error setting up connection:', err);
-          }
-        };
-
-        // Set up connection listener
-        const unsubConnection = onValue(userConnectionRef, handleConnection);
-        cleanupFunctions.push(unsubConnection);
-
-        // Set up partner monitoring if we have a partner
-        if (partner?.uid) {
-          const partnerConnectionRef = ref(rtdb, `connections/${partner.uid}`);
-          const partnerStatusRef = ref(rtdb, `status/${partner.uid}`);
-
-          const handlePartnerConnection = async (snapshot) => {
-            if (!isSubscribed) return;
-            const connection = snapshot.val();
-
-            if (!connection || connection.status === 'disconnected') {
-              try {
-                // Get fresh partner data
-                const partnerDoc = await getDoc(doc(db, 'users', partner.uid));
-                
-                if (!partnerDoc.exists() || partnerDoc.data().partnerId !== user.uid) {
-                  // Clean up Firestore first
-                  const batch = writeBatch(db);
-                  batch.update(doc(db, 'users', user.uid), { 
-                    partnerId: null,
-                    inviteCodes: [] 
-                  });
-                  if (partnerDoc.exists()) {
-                    batch.update(doc(db, 'users', partner.uid), { 
-                      partnerId: null,
-                      inviteCodes: [] 
-                    });
-                  }
-                  await batch.commit();
-
-                  // Then clean up RTDB
-                  await Promise.all([
-                    remove(ref(rtdb, `connections/${user.uid}`)),
-                    remove(ref(rtdb, `connections/${partner.uid}`)),
-                    remove(ref(rtdb, `status/${user.uid}`)),
-                    remove(ref(rtdb, `status/${partner.uid}`))
-                  ]);
-
-                  // Finally update local state
-                  if (isSubscribed) {
-                    setPartner(null);
-                    setDisconnectMessage('Your partner has disconnected');
-                  }
-                }
-              } catch (err) {
-                console.error('Error handling partner disconnection:', err);
-              }
-            }
-          };
-
-          const unsubPartner = onValue(partnerConnectionRef, handlePartnerConnection);
-          cleanupFunctions.push(unsubPartner);
-
-          const handlePartnerStatus = (snapshot) => {
-            if (!isSubscribed) return;
-            const status = snapshot.val();
-            if (status?.state === 'offline') {
-              console.log('Partner is offline');
-            }
-          };
-
-          const unsubPartnerStatus = onValue(partnerStatusRef, handlePartnerStatus);
-          cleanupFunctions.push(unsubPartnerStatus);
-        }
-      } catch (err) {
-        console.error('Error in connection setup:', err);
-      }
-    };
-
-    setupConnection();
-
-    // Cleanup function
-    return () => {
-      isSubscribed = false;
-      
-      // Clean up all listeners
-      cleanupFunctions.forEach(fn => fn());
-      
-      // Set offline status
-      if (user?.uid) {
-        Promise.all([
-          set(ref(rtdb, `connections/${user.uid}`), {
-            status: 'disconnected',
-            lastSeen: rtdbTimestamp(),
-            partnerId: null
-          }),
-          set(ref(rtdb, `status/${user.uid}`), {
-            state: 'offline',
-            last_changed: rtdbTimestamp()
-          })
-        ]).catch(console.error);
-      }
-    };
-  }, [user?.uid, partner?.uid]);
-
-  // Add listener for incoming connections
-  useEffect(() => {
-    if (!user?.uid) return;
-
-    // Listen for changes to my user document in Firestore
-    const userDocRef = doc(db, 'users', user.uid);
-    const unsubscribe = onValue(ref(rtdb, `connections`), async (snapshot) => {
-      const connections = snapshot.val();
-      
-      try {
-        // Get the latest user data from Firestore
-        const userDoc = await getDoc(userDocRef);
-        const userData = userDoc.data();
-        
-        // If we have a partnerId in Firestore
-        if (userData?.partnerId) {
-          const partnerConnection = connections?.[userData.partnerId];
-          
-          // If partner is connected and we don't have partner data
-          if (partnerConnection?.status === 'connected' && !partner) {
-            // Fetch partner data
-            const partnerDoc = await getDoc(doc(db, 'users', userData.partnerId));
-            if (partnerDoc.exists()) {
-              const partnerData = partnerDoc.data();
-              if (partnerData.partnerId === user.uid) {
-                setPartner(partnerData);
-                setDisconnectMessage(null);
-                
-                // Ensure our connection is also set
-                const myConnectionRef = ref(rtdb, `connections/${user.uid}`);
-                await set(myConnectionRef, {
-                  status: 'connected',
-                  lastSeen: rtdbTimestamp(),
-                  partnerId: userData.partnerId
-                });
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Error handling incoming connection:', err);
       }
     });
 
-    return () => unsubscribe();
-  }, [user?.uid]);
+    return () => {
+      mounted = false;
+      if (authTimeout) {
+        clearTimeout(authTimeout);
+      }
+      unsubscribe();
+    };
+  }, []);
+
+  // Handle online/offline state
+  useEffect(() => {
+    const handleOnlineStatus = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', handleOnlineStatus);
+    window.addEventListener('offline', handleOnlineStatus);
+
+    return () => {
+      window.removeEventListener('online', handleOnlineStatus);
+      window.removeEventListener('offline', handleOnlineStatus);
+    };
+  }, []);
 
   // Initialize user data after sign up or sign in
   const initializeUserData = async (user) => {
@@ -555,26 +311,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Update auth state change handler
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
-      setIsLoading(false);
-      
-      if (user) {
-        // Initialize data for new sign in
-        await initializeUserData(user);
-      } else {
-        // Clear states when user signs out
-        setPartner(null);
-        setDisconnectMessage(null);
-        setActiveInviteCode(null);
-      }
-    });
-
-    return unsubscribe;
-  }, []);
-
   const logout = async () => {
     try {
       if (!isOnline) {
@@ -589,7 +325,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Update the connect function to handle Firestore state properly
+  // Update the connect function to use safeWrite
   const connectPartner = async (inviteCode) => {
     try {
       if (!isOnline) {
@@ -604,54 +340,65 @@ export const AuthProvider = ({ children }) => {
         throw new Error('You are already connected with a partner. Please disconnect first.');
       }
 
-      // Wait for any pending writes
-      await waitForPendingWrites(db);
-
-      // Query for users with matching invite code
+      // Get all users and filter manually since we can't do complex array queries
       const usersRef = collection(db, 'users');
-      const q = query(
-        usersRef,
-        where('inviteCodes', 'array-contains', {
-          code: inviteCode.toUpperCase(),
-          used: false,
-          expiresAt: where('>', Timestamp.now())
-        })
-      );
+      const querySnapshot = await getDocs(usersRef);
+      const now = Timestamp.now();
 
-      const querySnapshot = await getDocs(q);
-      
-      if (querySnapshot.empty) {
+      // Find user with matching invite code
+      let validPartnerDoc = null;
+      querySnapshot.forEach(doc => {
+        const userData = doc.data();
+        const matchingCode = userData.inviteCodes?.find(code => 
+          code.code === inviteCode.toUpperCase() && 
+          !code.used && 
+          code.expiresAt?.toMillis() > now.toMillis()
+        );
+        
+        if (matchingCode) {
+          validPartnerDoc = doc;
+        }
+      });
+
+      if (!validPartnerDoc) {
         throw new Error('Invalid or expired invite code. Please try again with a valid code.');
       }
 
-      const partnerDoc = querySnapshot.docs[0];
-      const partnerId = partnerDoc.id;
+      const partnerId = validPartnerDoc.id;
 
       if (partnerId === user.uid) {
         throw new Error('You cannot connect with yourself.');
       }
 
-      // Wait for pending writes before starting batch
-      await waitForPendingWrites(db);
+      // Use safeWrite for the batch operation
+      await safeWrite(async () => {
+        const batch = writeBatch(db);
+        const partnerData = validPartnerDoc.data();
+        const matchingCode = partnerData.inviteCodes.find(code => 
+          code.code === inviteCode.toUpperCase()
+        );
 
-      // Start a batch write
-      const batch = writeBatch(db);
+        // Update partner's document
+        const partnerRef = doc(db, 'users', partnerId);
+        batch.update(partnerRef, {
+          partnerId: user.uid,
+          inviteCodes: arrayRemove(matchingCode)
+        });
 
-      // Update partner's document
-      const partnerRef = doc(db, 'users', partnerId);
-      batch.update(partnerRef, {
-        partnerId: user.uid,
-        'inviteCodes': arrayRemove(inviteCode)
+        // Update current user's document
+        const userRef = doc(db, 'users', user.uid);
+        batch.update(userRef, {
+          partnerId: partnerId
+        });
+
+        await batch.commit();
+
+        // After successful connection, get fresh partner data and update state
+        const freshPartnerDoc = await getDoc(partnerRef);
+        if (freshPartnerDoc.exists()) {
+          setPartner(freshPartnerDoc.data());
+        }
       });
-
-      // Update current user's document
-      const userRef = doc(db, 'users', user.uid);
-      batch.update(userRef, {
-        partnerId: partnerId
-      });
-
-      // Commit the batch
-      await batch.commit();
 
       // Update RTDB connection status
       const connectionRef = ref(rtdb, `connections/${user.uid}`);
@@ -662,6 +409,7 @@ export const AuthProvider = ({ children }) => {
 
       return partnerId;
     } catch (err) {
+      console.error('Error connecting with partner:', err);
       setError(err.message);
       throw err;
     }
@@ -694,20 +442,29 @@ export const AuthProvider = ({ children }) => {
 
       const userRef = doc(db, 'users', user.uid);
       
-      // Update with single code
-      await updateDoc(userRef, {
-        inviteCodes: [inviteCode]
+      await safeWrite(async () => {
+        const userDoc = await getDoc(userRef);
+        if (!userDoc.exists()) {
+          throw new Error('User document not found');
+        }
+
+        await updateDoc(userRef, {
+          inviteCodes: arrayUnion(inviteCode)
+        });
       });
 
       setActiveInviteCode(inviteCode);
+      setError(null);
+      
       return inviteCode;
     } catch (err) {
-      setError(err.message);
+      console.error('Error generating invite code:', err);
+      setError(err.message || 'Failed to generate invite code');
       throw err;
     }
   };
 
-  // Update the disconnect function to handle Firestore state properly
+  // Update the disconnect function to use safeWrite
   const disconnectPartner = async () => {
     try {
       if (!user) {
@@ -718,9 +475,6 @@ export const AuthProvider = ({ children }) => {
         throw new Error('You are not currently connected with a partner.');
       }
 
-      // Wait for any pending writes to complete
-      await waitForPendingWrites(db);
-
       // First clean up RTDB connections
       const userConnectionRef = ref(rtdb, `connections/${user.uid}`);
       const partnerConnectionRef = ref(rtdb, `connections/${partner.uid}`);
@@ -730,24 +484,24 @@ export const AuthProvider = ({ children }) => {
         remove(partnerConnectionRef)
       ]);
 
-      // Then update Firestore documents
-      const batch = writeBatch(db);
-      
-      const userRef = doc(db, 'users', user.uid);
-      batch.update(userRef, {
-        partnerId: null,
-        inviteCodes: []
-      });
+      // Use safeWrite for the batch operation
+      await safeWrite(async () => {
+        const batch = writeBatch(db);
+        
+        const userRef = doc(db, 'users', user.uid);
+        batch.update(userRef, {
+          partnerId: null,
+          inviteCodes: []
+        });
 
-      const partnerRef = doc(db, 'users', partner.uid);
-      batch.update(partnerRef, {
-        partnerId: null,
-        inviteCodes: []
-      });
+        const partnerRef = doc(db, 'users', partner.uid);
+        batch.update(partnerRef, {
+          partnerId: null,
+          inviteCodes: []
+        });
 
-      // Wait for pending writes before committing
-      await waitForPendingWrites(db);
-      await batch.commit();
+        return batch.commit();
+      });
 
       // Finally update local state
       setPartner(null);
@@ -767,12 +521,6 @@ export const AuthProvider = ({ children }) => {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
-      
-      // Check if email is verified
-      if (!user.emailVerified) {
-        await signOut(auth);
-        throw new Error('Please verify your email address before signing in.');
-      }
       
       // Check if user exists in database
       const userRef = doc(db, 'users', user.uid);
@@ -804,6 +552,16 @@ export const AuthProvider = ({ children }) => {
       if (error.code === 'auth/popup-closed-by-user') {
         throw new Error('Sign-in cancelled. Please try again.');
       }
+      // Add more specific error handling
+      if (error.code === 'auth/network-request-failed') {
+        throw new Error('Network error. Please check your internet connection.');
+      }
+      if (error.code === 'auth/popup-blocked') {
+        throw new Error('Pop-up blocked. Please allow pop-ups for this site.');
+      }
+      if (error.code === 'auth/cancelled-popup-request') {
+        throw new Error('Sign-in cancelled. Please try again.');
+      }
       throw error;
     }
   };
@@ -827,6 +585,7 @@ export const AuthProvider = ({ children }) => {
     signInWithGoogle,
   };
 
+  // Only show loading for initial auth check
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">

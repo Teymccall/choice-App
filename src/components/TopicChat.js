@@ -12,7 +12,8 @@ import {
   ArrowUturnLeftIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  FaceSmileIcon
+  FaceSmileIcon,
+  CheckIcon
 } from '@heroicons/react/24/outline';
 import { ref, onValue, push, update, serverTimestamp } from 'firebase/database';
 import { rtdb } from '../firebase/config';
@@ -99,6 +100,29 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
     setSwipeX(0);
   };
 
+  // Render read receipt icons
+  const renderReadReceipt = () => {
+    if (!isOwnMessage) return null;
+    
+    if (message.read) {
+      return (
+        <div className="flex -space-x-1">
+          <CheckIcon className="h-3.5 w-3.5 text-blue-500" />
+          <CheckIcon className="h-3.5 w-3.5 text-blue-500" />
+        </div>
+      );
+    } else if (message.delivered) {
+      return (
+        <div className="flex -space-x-1">
+          <CheckIcon className="h-3.5 w-3.5 text-gray-500" />
+          <CheckIcon className="h-3.5 w-3.5 text-gray-500" />
+        </div>
+      );
+    } else {
+      return <CheckIcon className="h-3.5 w-3.5 text-gray-500" />;
+    }
+  };
+
   return (
     <div 
       ref={messageRef}
@@ -179,10 +203,11 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
                 }`}>
                   {message.text}
                 </p>
-                <div className="flex justify-end mt-1">
+                <div className="flex justify-end items-center mt-1 space-x-1">
                   <span className="text-[11px] text-[#667781] dark:text-[#8696a0] leading-none">
                     {timeString}
                   </span>
+                  {renderReadReceipt()}
                 </div>
               </div>
             )}
@@ -237,8 +262,9 @@ const TopicChat = ({ topic, onClose }) => {
   }, [topic?.id, user?.uid]);
 
   useEffect(() => {
-    if (!topic?.id || !partner?.uid) return;
+    if (!topic?.id || !partner?.uid || !user?.uid) return;
 
+    // Listen for message updates
     const chatRef = ref(rtdb, `topicChats/${topic.id}`);
     
     const unsubscribe = onValue(chatRef, (snapshot) => {
@@ -249,49 +275,42 @@ const TopicChat = ({ topic, onClose }) => {
         return;
       }
 
-      localStorage.setItem(`lastRead_${topic.id}_${user.uid}`, Date.now().toString());
+      // Mark partner's messages as read
+      const updates = {};
+      Object.entries(data).forEach(([id, message]) => {
+        if (message.userId === partner.uid && message.partnerId === user.uid && !message.read) {
+          updates[`${id}/read`] = true;
+        }
+      });
 
-      try {
-        const messagesList = Object.entries(data)
-          .map(([id, message]) => ({
-            id,
-            ...message,
-            timestamp: message.timestamp || Date.now() // Ensure timestamp exists
-          }))
-          .filter(message => 
-            // Include messages where either user is the sender or receiver
-            (message.userId === user.uid && message.partnerId === partner.uid) ||
-            (message.userId === partner.uid && message.partnerId === user.uid)
-          )
-          .sort((a, b) => {
-            // Ensure proper timestamp comparison
-            const timestampA = typeof a.timestamp === 'number' ? a.timestamp : a.timestamp?.toMillis?.() || 0;
-            const timestampB = typeof b.timestamp === 'number' ? b.timestamp : b.timestamp?.toMillis?.() || 0;
-            return timestampA - timestampB;
-          });
-
-        console.log('Received messages:', messagesList.length); // Debug log
-        setMessages(messagesList);
-        setLoading(false);
-        setTimeout(scrollToBottom, 100);
-      } catch (err) {
-        console.error('Error processing messages:', err);
-        setError('Error loading messages. Please try refreshing.');
-        setLoading(false);
+      // Apply read status updates
+      if (Object.keys(updates).length > 0) {
+        update(chatRef, updates);
       }
-    }, (error) => {
-      console.error('Error in chat listener:', error);
-      setError('Error connecting to chat. Please check your connection.');
+
+      // Update messages list
+      const messagesList = Object.entries(data)
+        .map(([id, message]) => ({
+          id,
+          ...message,
+          timestamp: message.timestamp || Date.now()
+        }))
+        .filter(message => 
+          (message.userId === user.uid && message.partnerId === partner.uid) ||
+          (message.userId === partner.uid && message.partnerId === user.uid)
+        )
+        .sort((a, b) => {
+          const timestampA = typeof a.timestamp === 'number' ? a.timestamp : a.timestamp?.toMillis?.() || 0;
+          const timestampB = typeof b.timestamp === 'number' ? b.timestamp : b.timestamp?.toMillis?.() || 0;
+          return timestampA - timestampB;
+        });
+
+      setMessages(messagesList);
       setLoading(false);
+      setTimeout(scrollToBottom, 100);
     });
 
-    return () => {
-      try {
-        unsubscribe();
-      } catch (err) {
-        console.error('Error cleaning up chat listener:', err);
-      }
-    };
+    return () => unsubscribe();
   }, [topic?.id, partner?.uid, user?.uid]);
 
   useEffect(() => {
@@ -435,6 +454,8 @@ const TopicChat = ({ topic, onClose }) => {
         partnerId: partner.uid,
         userName: user.displayName || 'User',
         timestamp: serverTimestamp(),
+        delivered: false,
+        read: false,
         ...(mediaData && {
           media: {
             url: mediaData.url,
@@ -448,7 +469,15 @@ const TopicChat = ({ topic, onClose }) => {
         ...(replyData && { replyTo: replyData })
       };
 
-      await push(chatRef, messageData);
+      // Send message
+      const newMessageRef = await push(chatRef, messageData);
+
+      // Mark as delivered immediately if partner is online
+      if (isOnline) {
+        update(ref(rtdb, `topicChats/${topic.id}/${newMessageRef.key}`), {
+          delivered: true
+        });
+      }
 
       if (partner?.uid) {
         const notificationRef = ref(rtdb, `notifications/${partner.uid}`);
@@ -598,8 +627,8 @@ const TopicChat = ({ topic, onClose }) => {
   return (
     <div className="fixed inset-0 bg-[#efeae2] dark:bg-[#0c1317] z-50">
       <div className="h-full flex flex-col">
-        {/* Header - now with sticky positioning */}
-        <div className="sticky top-0 z-10 flex-none px-3 sm:px-4 py-2 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db] dark:border-[#2f3b44] flex items-center justify-between">
+        {/* Header - now with fixed positioning */}
+        <div className="fixed top-0 left-0 right-0 z-[51] px-3 sm:px-4 py-2 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db] dark:border-[#2f3b44] flex items-center justify-between">
           <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
             <div className="flex flex-col min-w-0 flex-1">
               <h3 className="text-[15px] sm:text-[16px] font-medium text-[#111b21] dark:text-[#e9edef] leading-tight truncate">
@@ -618,8 +647,8 @@ const TopicChat = ({ topic, onClose }) => {
           </button>
         </div>
 
-        {/* Messages - with adjusted height calculation */}
-        <div className="flex-1 overflow-y-auto px-[3%] sm:px-[5%] py-3 sm:py-4 space-y-1 bg-[#efeae2] dark:bg-[#0c1317]">
+        {/* Messages - with adjusted padding for fixed header */}
+        <div className="flex-1 overflow-y-auto px-[3%] sm:px-[5%] py-3 sm:py-4 space-y-1 bg-[#efeae2] dark:bg-[#0c1317] mt-[60px]">
           {messages.map((message) => (
             <Message
               key={message.id}
