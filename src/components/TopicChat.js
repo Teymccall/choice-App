@@ -445,7 +445,11 @@ const TopicChat = ({ topic, onClose }) => {
     sessionStorage.setItem('openTopicChatId', topic.id);
     
     return () => {
-      sessionStorage.removeItem('openTopicChatId');
+      // Only remove session storage if we're actually closing the chat
+      // not just during component cleanup on refresh
+      if (!window.performance.getEntriesByType('navigation').some(entry => entry.type === 'reload')) {
+        sessionStorage.removeItem('openTopicChatId');
+      }
     };
   }, [topic?.id, user?.uid]);
 
@@ -936,37 +940,37 @@ const TopicChat = ({ topic, onClose }) => {
   }
 
   return (
-    <div className="fixed inset-0 bg-[#efeae2] dark:bg-[#0c1317] z-50 flex flex-col h-[100vh] h-[calc(var(--vh,1vh)*100)]">
-      {/* Header */}
-      <div className="flex-none px-3 sm:px-4 py-2 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db] dark:border-[#2f3b44] flex items-center justify-between">
-        <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
-          <div className="flex flex-col min-w-0 flex-1">
-            <div className="flex items-center space-x-2">
-              <h3 className="text-[15px] sm:text-[16px] font-medium text-[#111b21] dark:text-[#e9edef] leading-tight truncate">
+    <div className="fixed inset-0 bg-[#efeae2] dark:bg-[#0c1317] z-50 flex flex-col max-h-[100vh] h-[100dvh]">
+      {/* Header - make it more compact on mobile */}
+      <div className="flex-none px-3 py-2 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db] dark:border-[#2f3b44]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center min-w-0 flex-1 space-x-2">
+            <button
+              onClick={onClose}
+              className="flex-none p-1 -ml-1 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            >
+              <XMarkIcon className="h-6 w-6" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-[15px] font-medium text-[#111b21] dark:text-[#e9edef] leading-tight truncate">
                 {partner?.displayName || 'Partner'}
+                {isOnline && (
+                  <span className="inline-flex ml-2">
+                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                    <span className="absolute w-2 h-2 bg-green-500 rounded-full animate-ping opacity-75"></span>
+                  </span>
+                )}
               </h3>
-              {isOnline && (
-                <div className="relative flex-none">
-                  <div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>
-                  <div className="absolute inset-0 w-2.5 h-2.5 bg-green-500 rounded-full animate-ping opacity-75"></div>
-                </div>
-              )}
+              <p className="text-[12px] text-[#667781] dark:text-[#8696a0] leading-tight mt-0.5 truncate">
+                {topic.question}
+              </p>
             </div>
-            <p className="text-[12px] sm:text-[13px] text-[#667781] dark:text-[#8696a0] leading-tight mt-0.5 truncate">
-              {topic.question}
-            </p>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="flex-none p-1.5 sm:p-2 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors ml-2"
-        >
-          <XMarkIcon className="h-5 w-5" />
-        </button>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-[3%] sm:px-[5%] py-3 sm:py-4 space-y-1">
+      {/* Messages - adjust padding and spacing */}
+      <div className="flex-1 overflow-y-auto px-[3%] py-2 space-y-1">
         {messages.map((message) => (
           <Message
             key={message.id}
@@ -994,8 +998,8 @@ const TopicChat = ({ topic, onClose }) => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input area */}
-      <div className="flex-none bg-[#f0f2f5] dark:bg-[#202c33] px-2 sm:px-4 py-2 relative">
+      {/* Input area - optimize for mobile */}
+      <div className="flex-none bg-[#f0f2f5] dark:bg-[#202c33] px-2 py-2 relative">
         {editingMessage && (
           <div className="absolute left-0 right-0 -top-10 bg-blue-500 dark:bg-blue-600 px-4 py-2 flex items-center justify-between text-white">
             <span className="text-sm">Editing message</span>
@@ -1008,14 +1012,14 @@ const TopicChat = ({ topic, onClose }) => {
           </div>
         )}
         {replyingTo && !editingMessage && (
-          <div className="flex items-center justify-between bg-[#fff] dark:bg-[#2a3942] px-3 sm:px-4 py-2 -mb-1 mx-1 rounded-t-lg">
+          <div className="flex items-center justify-between bg-[#fff] dark:bg-[#2a3942] px-3 py-2 -mb-1 mx-1 rounded-t-lg">
             <div className="flex items-start space-x-2 min-w-0 flex-1">
               <div className="w-0.5 h-full bg-[#00a884] self-stretch flex-none"/>
               <div className="flex flex-col min-w-0 py-0.5">
-                <span className="text-[#00a884] dark:text-[#00a884] text-[12px] sm:text-[13px] font-medium">
+                <span className="text-[#00a884] dark:text-[#00a884] text-[12px] font-medium">
                   {replyingTo.userId === user.uid ? 'You' : 'Partner'}
                 </span>
-                <span className="text-[#667781] dark:text-[#8696a0] text-[12px] sm:text-[13px] truncate">
+                <span className="text-[#667781] dark:text-[#8696a0] text-[12px] truncate">
                   {replyingTo.text || 'Media message'}
                 </span>
               </div>
@@ -1030,8 +1034,8 @@ const TopicChat = ({ topic, onClose }) => {
         )}
         <div className="flex items-end space-x-2">
           <div className="flex-1 bg-white dark:bg-[#2a3942] rounded-lg flex items-end">
-            {/* Add media button */}
-            <div className="flex items-center px-2 py-2">
+            {/* Media button */}
+            <div className="flex items-center px-1.5 py-1.5">
               <button
                 type="button"
                 onClick={handleMediaClick}
@@ -1059,10 +1063,10 @@ const TopicChat = ({ topic, onClose }) => {
                 }
               }}
               placeholder={editingMessage ? "Edit message..." : "Type a message"}
-              className="flex-1 max-h-[100px] min-h-[42px] px-3 py-2.5 bg-transparent border-none focus:ring-0 text-[15px] placeholder-[#3b4a54] dark:placeholder-[#8696a0] resize-none"
+              className="flex-1 max-h-[100px] min-h-[42px] px-2 py-2 bg-transparent border-none focus:ring-0 text-[15px] placeholder-[#3b4a54] dark:placeholder-[#8696a0] resize-none"
               style={{ height: '42px' }}
             />
-            <div className="flex items-center px-2 py-2">
+            <div className="flex items-center px-1.5 py-1.5">
               <button
                 type="button"
                 onMouseDown={startRecording}
@@ -1076,13 +1080,11 @@ const TopicChat = ({ topic, onClose }) => {
               </button>
             </div>
           </div>
-
-          {/* Send button */}
           {!isRecording && (
             <button
               onClick={handleSendMessage}
               disabled={!newMessage.trim() && !selectedFile}
-              className={`p-2 rounded-full ${
+              className={`p-2 rounded-full flex-none ${
                 (!newMessage.trim() && !selectedFile)
                   ? 'text-[#8696a0] dark:text-[#8696a0]'
                   : 'text-white bg-[#00a884] hover:bg-[#06cf9c] dark:bg-[#00a884] dark:hover:bg-[#06cf9c]'
@@ -1096,80 +1098,80 @@ const TopicChat = ({ topic, onClose }) => {
             </button>
           )}
         </div>
-
-        {/* Media menu */}
-        {showMediaMenu && (
-          <div 
-            ref={mediaMenuRef}
-            className="absolute bottom-full left-2 sm:left-4 mb-[2px] w-[186px] bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden z-50"
-          >
-            <div className="py-[6px]">
-              <label
-                className="flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] cursor-pointer transition-colors"
-                onClick={() => {
-                  fileInputRef.current?.click();
-                  setShowMediaMenu(false);
-                }}
-              >
-                <PhotoIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
-                <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Photos & Videos</span>
-              </label>
-
-              <button
-                onClick={() => {
-                  handleCameraClick();
-                  setShowMediaMenu(false);
-                }}
-                className="w-full flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] transition-colors"
-                disabled={uploadingMedia}
-              >
-                <CameraIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
-                <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Camera</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Media Preview */}
-        {selectedFile && (
-          <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden">
-            <div className="p-2 sm:p-3 flex items-center justify-between">
-              <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
-                {previewUrl && (
-                  <img 
-                    src={previewUrl} 
-                    alt="Preview" 
-                    className="h-14 w-14 sm:h-16 sm:w-16 object-cover rounded-lg flex-none"
-                  />
-                )}
-                <span className="text-sm text-[#111b21] dark:text-[#e9edef] truncate">
-                  {selectedFile.name}
-                </span>
-              </div>
-              <button
-                onClick={() => {
-                  setSelectedFile(null);
-                  setPreviewUrl(null);
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = '';
-                  }
-                }}
-                className="p-1.5 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-[#f0f2f5] dark:hover:bg-[#182229] flex-none ml-2"
-                disabled={uploadingMedia}
-              >
-                <XCircleIcon className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Error Message */}
-        {error && (
-          <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-200 p-2 sm:p-3 rounded-lg shadow-lg">
-            {error}
-          </div>
-        )}
       </div>
+
+      {/* Media menu */}
+      {showMediaMenu && (
+        <div 
+          ref={mediaMenuRef}
+          className="absolute bottom-full left-2 sm:left-4 mb-[2px] w-[186px] bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden z-50"
+        >
+          <div className="py-[6px]">
+            <label
+              className="flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] cursor-pointer transition-colors"
+              onClick={() => {
+                fileInputRef.current?.click();
+                setShowMediaMenu(false);
+              }}
+            >
+              <PhotoIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
+              <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Photos & Videos</span>
+            </label>
+
+            <button
+              onClick={() => {
+                handleCameraClick();
+                setShowMediaMenu(false);
+              }}
+              className="w-full flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] transition-colors"
+              disabled={uploadingMedia}
+            >
+              <CameraIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
+              <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Camera</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Media Preview */}
+      {selectedFile && (
+        <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden">
+          <div className="p-2 sm:p-3 flex items-center justify-between">
+            <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
+              {previewUrl && (
+                <img 
+                  src={previewUrl} 
+                  alt="Preview" 
+                  className="h-14 w-14 sm:h-16 sm:w-16 object-cover rounded-lg flex-none"
+                />
+              )}
+              <span className="text-sm text-[#111b21] dark:text-[#e9edef] truncate">
+                {selectedFile.name}
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setSelectedFile(null);
+                setPreviewUrl(null);
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = '';
+                }
+              }}
+              className="p-1.5 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-[#f0f2f5] dark:hover:bg-[#182229] flex-none ml-2"
+              disabled={uploadingMedia}
+            >
+              <XCircleIcon className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {error && (
+        <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-200 p-2 sm:p-3 rounded-lg shadow-lg">
+          {error}
+        </div>
+      )}
 
       {/* Hidden file inputs */}
       <input

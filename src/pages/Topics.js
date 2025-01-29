@@ -13,7 +13,7 @@ import {
   XMarkIcon,
   HashtagIcon,
 } from '@heroicons/react/24/outline';
-import { ref, onValue, push, update, serverTimestamp } from 'firebase/database';
+import { ref, onValue, push, update, serverTimestamp, get } from 'firebase/database';
 import { rtdb } from '../firebase/config';
 import TopicChat from '../components/TopicChat';
 
@@ -153,6 +153,24 @@ const Topics = () => {
   // eslint-disable-next-line no-unused-vars
   const [unreadResponses, setUnreadResponses] = useState({});
   const [unreadMessagesByTopic, setUnreadMessagesByTopic] = useState({});
+
+  // Check for open chat on mount
+  useEffect(() => {
+    const openTopicChatId = sessionStorage.getItem('openTopicChatId');
+    if (openTopicChatId) {
+      // Fetch the topic data and open the chat
+      const topicRef = ref(rtdb, `topics/${openTopicChatId}`);
+      get(topicRef).then((snapshot) => {
+        if (snapshot.exists()) {
+          const topicData = snapshot.val();
+          setSelectedTopic({
+            id: openTopicChatId,
+            ...topicData
+          });
+        }
+      });
+    }
+  }, []);
 
   // Check for stored topic ID on mount and when topics change
   useEffect(() => {
