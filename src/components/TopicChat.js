@@ -13,9 +13,12 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   FaceSmileIcon,
-  CheckIcon
+  CheckIcon,
+  TrashIcon,
+  PencilIcon,
+  MicrophoneIcon
 } from '@heroicons/react/24/outline';
-import { ref, onValue, push, update, serverTimestamp } from 'firebase/database';
+import { ref, onValue, push, update, serverTimestamp, remove, get } from 'firebase/database';
 import { rtdb } from '../firebase/config';
 import { uploadMedia, validateFile } from '../utils/mediaUpload';
 import cld from '../config/cloudinary';
@@ -31,10 +34,16 @@ const formatTime = (timestamp) => {
 
 const ImageViewer = ({ image, onClose }) => {
   return (
-    <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center" onClick={onClose}>
+    <div 
+      className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center" 
+      onClick={onClose}
+    >
       <button 
         className="absolute top-4 right-4 text-white p-2 hover:bg-white/10 rounded-full"
-        onClick={onClose}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
       >
         <XMarkIcon className="h-6 w-6" />
       </button>
@@ -42,24 +51,41 @@ const ImageViewer = ({ image, onClose }) => {
         src={image} 
         alt="Full size" 
         className="max-w-[90vw] max-h-[90vh] object-contain"
-        onClick={(e) => e.stopPropagation()}
       />
     </div>
   );
 };
 
-const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRefs }) => {
+const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRefs, onDelete, onEdit, onStartEdit }) => {
   const timeString = formatTime(message.timestamp);
   const messageRef = useRef(null);
   const [swipeX, setSwipeX] = useState(0);
   const touchStart = useRef(0);
   const swipeThreshold = 50;
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showEditInput, setShowEditInput] = useState(false);
+  const [editedText, setEditedText] = useState(message.text);
+  const editInputRef = useRef(null);
+  const longPressTimeout = useRef(null);
+  const [isLongPressed, setIsLongPressed] = useState(false);
+  const [isDeleted, setIsDeleted] = useState(message.isDeleted || false);
+
+  useEffect(() => {
+    setIsDeleted(message.isDeleted || false);
+  }, [message.isDeleted]);
 
   useEffect(() => {
     if (messageRef.current) {
       messageRefs.current[message.id] = messageRef;
     }
   }, [message.id, messageRefs]);
+
+  useEffect(() => {
+    if (showEditInput && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.setSelectionRange(editedText.length, editedText.length);
+    }
+  }, [showEditInput]);
 
   const handleReplyClick = (e) => {
     e.stopPropagation(); // Prevent event bubbling
@@ -78,9 +104,16 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
 
   const handleTouchStart = (e) => {
     touchStart.current = e.touches[0].clientX;
+    longPressTimeout.current = setTimeout(() => {
+      setIsLongPressed(true);
+      setShowDeleteModal(true);
+    }, 500); // 500ms for long press
   };
 
   const handleTouchMove = (e) => {
+    if (longPressTimeout.current) {
+      clearTimeout(longPressTimeout.current);
+    }
     if (!touchStart.current) return;
     const currentX = e.touches[0].clientX;
     const diff = currentX - touchStart.current;
@@ -93,11 +126,28 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
   };
 
   const handleTouchEnd = () => {
-    if (swipeX >= swipeThreshold) {
+    if (longPressTimeout.current) {
+      clearTimeout(longPressTimeout.current);
+    }
+    if (!isLongPressed && swipeX >= swipeThreshold) {
       onReply(message);
     }
     touchStart.current = 0;
     setSwipeX(0);
+    setIsLongPressed(false);
+  };
+
+  const handleDelete = async (deleteForEveryone) => {
+    setIsDeleted(true);
+    await onDelete(message.id, deleteForEveryone);
+    setShowDeleteModal(false);
+  };
+
+  const handleEdit = () => {
+    if (editedText.trim() !== message.text) {
+      onEdit(message.id, editedText.trim());
+    }
+    setShowEditInput(false);
   };
 
   // Render read receipt icons
@@ -123,98 +173,230 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
     }
   };
 
-  return (
-    <div 
-      ref={messageRef}
-      className={`flex w-full mb-1.5 ${isOwnMessage ? 'justify-end' : 'justify-start'} transition-colors duration-200`}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-    >
+  const renderMediaContent = () => {
+    if (!message.media) return null;
+
+    if (message.media.type.startsWith('audio')) {
+      return (
+        <div className="flex items-center space-x-2">
+          <audio
+            src={message.media.url}
+            controls
+            controlsList="nodownload noplaybackrate"
+            preload="metadata"
+            className="h-10 max-w-[200px] audio-player"
+          />
+          {message.media.duration && (
+            <span className="text-[11px] text-[#667781] dark:text-[#8696a0]">
+              {Math.floor(message.media.duration / 60)}:{(message.media.duration % 60).toString().padStart(2, '0')}
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    return (
       <div 
-        className={`flex flex-col max-w-[65%] relative transition-transform`}
-        style={{ transform: `translateX(${swipeX}px)` }}
+        className="rounded-lg overflow-hidden cursor-pointer -mx-[9px] -mt-[6px]"
+        onClick={() => onImageClick(message.media.url)}
       >
-        {message.replyTo && (
-          <div 
-            className={`
-              text-[12.8px] mb-0.5 px-3 py-[4px] cursor-pointer flex flex-col
-              ${isOwnMessage 
-                ? 'bg-[#0b846d]/[0.08] text-[#0b846d]' 
-                : 'bg-[#667781]/[0.08] text-[#667781]'
-              }
-              rounded-[7px] rounded-bl-none w-full hover:opacity-80 transition-opacity
-            `}
-            onClick={handleReplyClick}
-          >
-            <span className="font-medium">
-              {message.replyTo.userId === user.uid ? 'You' : 'Partner'}
-            </span>
-            <span className="truncate opacity-80">
-              {message.replyTo.text || 'Media message'}
-            </span>
-          </div>
-        )}
+        <img
+          src={message.media.url}
+          alt="Shared media"
+          className="w-full max-h-[300px] object-cover"
+          loading="lazy"
+        />
+      </div>
+    );
+  };
 
-        <div className={`
-          relative group
-          ${message.media ? 'rounded-lg overflow-hidden' : 'rounded-[7px]'}
-          ${isOwnMessage 
-            ? 'bg-[#e7ffdb] dark:bg-[#005c4b]' 
-            : 'bg-white dark:bg-[#202c33]'
-          }
-          ${message.media ? '' : isOwnMessage ? 'rounded-tr-[4px]' : 'rounded-tl-[4px]'}
-          shadow-sm
-        `}>
-          {/* Message tail */}
+  return (
+    <>
+      <div 
+        ref={messageRef}
+        className={`flex w-full mb-1.5 ${isOwnMessage ? 'justify-end' : 'justify-start'} transition-colors duration-200`}
+      >
+        <div 
+          className={`flex flex-col max-w-[65%] relative transition-transform`}
+          style={{ transform: `translateX(${swipeX}px)` }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            if (!isDeleted) {
+              setShowDeleteModal(true);
+            }
+          }}
+        >
+          {message.replyTo && !isDeleted && (
+            <div 
+              className={`
+                text-[12.8px] mb-0.5 px-3 py-[4px] cursor-pointer flex flex-col
+                ${isOwnMessage 
+                  ? 'bg-[#0b846d]/[0.08] text-[#0b846d]' 
+                  : 'bg-[#667781]/[0.08] text-[#667781]'
+                }
+                rounded-[7px] rounded-bl-none w-full hover:opacity-80 transition-opacity
+              `}
+              onClick={handleReplyClick}
+            >
+              <span className="font-medium">
+                {message.replyTo.userId === user.uid ? 'You' : 'Partner'}
+              </span>
+              <span className="truncate opacity-80">
+                {message.replyTo.text || 'Media message'}
+              </span>
+            </div>
+          )}
+
           <div className={`
-            absolute top-0 w-3 h-3 overflow-hidden
-            ${isOwnMessage ? '-right-[10px]' : '-left-[10px]'}
+            relative group
+            ${message.media && !isDeleted ? 'rounded-lg overflow-hidden' : 'rounded-[7px]'}
+            ${isOwnMessage 
+              ? isDeleted ? 'bg-[#f0f0f0] dark:bg-[#1f2937]/50' : 'bg-[#e7ffdb] dark:bg-[#005c4b]'
+              : isDeleted ? 'bg-[#f0f0f0] dark:bg-[#1f2937]/50' : 'bg-white dark:bg-[#202c33]'
+            }
+            ${message.media && !isDeleted ? '' : isOwnMessage ? 'rounded-tr-[4px]' : 'rounded-tl-[4px]'}
+            shadow-sm
           `}>
+            {/* Message tail */}
             <div className={`
-              w-4 h-4 transform rotate-45 origin-top-left
-              ${isOwnMessage 
-                ? 'bg-[#e7ffdb] dark:bg-[#005c4b] -translate-x-1/2' 
-                : 'bg-white dark:bg-[#202c33] translate-x-1/2'
-              }
-            `}/>
-          </div>
+              absolute top-0 w-3 h-3 overflow-hidden
+              ${isOwnMessage ? '-right-[10px]' : '-left-[10px]'}
+              ${isDeleted ? 'hidden' : ''}
+            `}>
+              <div className={`
+                w-4 h-4 transform rotate-45 origin-top-left
+                ${isOwnMessage 
+                  ? 'bg-[#e7ffdb] dark:bg-[#005c4b] -translate-x-1/2' 
+                  : 'bg-white dark:bg-[#202c33] translate-x-1/2'
+                }
+              `}/>
+            </div>
 
-          <div className="px-[9px] py-[6px] min-w-[85px]">
-            {message.media && (
-              <div 
-                className="rounded-lg overflow-hidden cursor-pointer -mx-[9px] -mt-[6px]"
-                onClick={() => onImageClick(message.media.url)}
-              >
-                <img
-                  src={message.media.url}
-                  alt="Shared media"
-                  className="w-full max-h-[300px] object-cover"
-                  loading="lazy"
-                />
-              </div>
-            )}
-            {message.text && (
-              <div className="flex flex-col">
-                <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] ${
-                  isOwnMessage 
-                    ? 'text-[#111b21] dark:text-[#e9edef]' 
-                    : 'text-[#111b21] dark:text-[#e9edef]'
-                }`}>
-                  {message.text}
-                </p>
-                <div className="flex justify-end items-center mt-1 space-x-1">
-                  <span className="text-[11px] text-[#667781] dark:text-[#8696a0] leading-none">
+            <div className="px-[9px] py-[6px] min-w-[85px]">
+              {isDeleted ? (
+                <div className="flex items-center space-x-2">
+                  <span className="text-[14.2px] text-gray-500 dark:text-gray-400 italic">
+                    This message was deleted
+                  </span>
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400 leading-none">
                     {timeString}
                   </span>
-                  {renderReadReceipt()}
                 </div>
-              </div>
-            )}
+              ) : (
+                <>
+                  {message.media && renderMediaContent()}
+                  {message.text && (
+                    <div className="flex flex-col">
+                      {showEditInput ? (
+                        <div className="flex items-center space-x-2">
+                          <textarea
+                            ref={editInputRef}
+                            value={editedText}
+                            onChange={(e) => setEditedText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleEdit();
+                              }
+                              if (e.key === 'Escape') {
+                                setShowEditInput(false);
+                                setEditedText(message.text);
+                              }
+                            }}
+                            className="flex-1 bg-transparent border-none focus:ring-0 p-0 text-[14.2px] resize-none max-h-[150px] min-h-[19px]"
+                            style={{
+                              height: 'auto',
+                              minHeight: '19px'
+                            }}
+                          />
+                          <button
+                            onClick={handleEdit}
+                            className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                          >
+                            <CheckIcon className="h-5 w-5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] ${
+                          isOwnMessage 
+                            ? 'text-[#111b21] dark:text-[#e9edef]' 
+                            : 'text-[#111b21] dark:text-[#e9edef]'
+                        }`}>
+                          {message.text}
+                          {message.edited && (
+                            <span className="text-[11px] text-[#667781] dark:text-[#8696a0] ml-1">
+                              (edited)
+                            </span>
+                          )}
+                        </p>
+                      )}
+                      <div className="flex justify-end items-center mt-1 space-x-1">
+                        <span className="text-[11px] text-[#667781] dark:text-[#8696a0] leading-none">
+                          {timeString}
+                        </span>
+                        {renderReadReceipt()}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* Delete/Edit Modal */}
+      {showDeleteModal && !isDeleted && (
+        <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center px-4">
+          <div className="bg-white dark:bg-[#2a3942] rounded-lg shadow-xl max-w-sm w-full overflow-hidden">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
+                Message Options
+              </h3>
+            </div>
+            <div className="p-4 space-y-4">
+              {isOwnMessage && (
+                <>
+                  <button
+                    onClick={() => {
+                      setShowDeleteModal(false);
+                      onStartEdit(message);
+                    }}
+                    className="w-full px-4 py-2 text-left text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg flex items-center space-x-2"
+                  >
+                    <PencilIcon className="h-5 w-5" />
+                    <span>Edit message</span>
+                  </button>
+                  <button
+                    onClick={() => handleDelete(true)}
+                    className="w-full px-4 py-2 text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg flex items-center space-x-2"
+                  >
+                    <TrashIcon className="h-5 w-5" />
+                    <span>Delete for everyone</span>
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => handleDelete(false)}
+                className="w-full px-4 py-2 text-left text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/20 rounded-lg flex items-center space-x-2"
+              >
+                <TrashIcon className="h-5 w-5" />
+                <span>Delete for me</span>
+              </button>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="w-full px-4 py-2 text-left text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/20 rounded-lg"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 
@@ -244,6 +426,12 @@ const TopicChat = ({ topic, onClose }) => {
   const cameraInputRef = useRef(null);
   const messageRefs = useRef({});
   const inputRef = useRef(null);
+  const [editingMessage, setEditingMessage] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -264,10 +452,10 @@ const TopicChat = ({ topic, onClose }) => {
   useEffect(() => {
     if (!topic?.id || !partner?.uid || !user?.uid) return;
 
-    // Listen for message updates
     const chatRef = ref(rtdb, `topicChats/${topic.id}`);
+    const deletedMessagesRef = ref(rtdb, `deletedMessages/${user.uid}/${topic.id}`);
     
-    const unsubscribe = onValue(chatRef, (snapshot) => {
+    const unsubscribe = onValue(chatRef, async (snapshot) => {
       const data = snapshot.val();
       if (!data) {
         setMessages([]);
@@ -275,25 +463,17 @@ const TopicChat = ({ topic, onClose }) => {
         return;
       }
 
-      // Mark partner's messages as read
-      const updates = {};
-      Object.entries(data).forEach(([id, message]) => {
-        if (message.userId === partner.uid && message.partnerId === user.uid && !message.read) {
-          updates[`${id}/read`] = true;
-        }
-      });
-
-      // Apply read status updates
-      if (Object.keys(updates).length > 0) {
-        update(chatRef, updates);
-      }
+      // Get deleted messages for current user
+      const deletedSnapshot = await get(deletedMessagesRef);
+      const deletedMessages = deletedSnapshot.val() || {};
 
       // Update messages list
       const messagesList = Object.entries(data)
         .map(([id, message]) => ({
           id,
           ...message,
-          timestamp: message.timestamp || Date.now()
+          timestamp: message.timestamp || Date.now(),
+          isDeleted: !!deletedMessages[id] // Mark message as deleted if it exists in deletedMessages
         }))
         .filter(message => 
           (message.userId === user.uid && message.partnerId === partner.uid) ||
@@ -310,7 +490,21 @@ const TopicChat = ({ topic, onClose }) => {
       setTimeout(scrollToBottom, 100);
     });
 
-    return () => unsubscribe();
+    // Listen for changes in deleted messages
+    const deletedUnsubscribe = onValue(deletedMessagesRef, (snapshot) => {
+      const deletedData = snapshot.val() || {};
+      setMessages(prevMessages => 
+        prevMessages.map(msg => ({
+          ...msg,
+          isDeleted: !!deletedData[msg.id]
+        }))
+      );
+    });
+
+    return () => {
+      unsubscribe();
+      deletedUnsubscribe();
+    };
   }, [topic?.id, partner?.uid, user?.uid]);
 
   useEffect(() => {
@@ -370,162 +564,9 @@ const TopicChat = ({ topic, onClose }) => {
   };
 
   const handleMediaClick = () => {
-    // Simple toggle of media menu
     setShowMediaMenu(prev => !prev);
-    // Close emoji picker if open
     setShowEmojiPicker(false);
   };
-
-  const handleFileSelect = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setError(null);
-      setUploadingMedia(true);
-
-      // Validate file first
-      await validateFile(file);
-      
-      // Create preview
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewUrl(reader.result);
-        setSelectedFile(file);
-      };
-      reader.readAsDataURL(file);
-      
-      // Close media menu
-      setShowMediaMenu(false);
-    } catch (error) {
-      console.error('File validation error:', error);
-      setError(error.message);
-      setSelectedFile(null);
-      setPreviewUrl(null);
-    } finally {
-      setUploadingMedia(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
-
-  const handleReply = (message) => {
-    setReplyingTo(message);
-  };
-
-  const handleSendMessage = async (e) => {
-    // If event exists, prevent default behavior
-    if (e) {
-      e.preventDefault();
-    }
-    
-    if ((!newMessage.trim() && !selectedFile) || !isOnline || !partner?.uid) return;
-
-    // Store message text and reply info before clearing
-    const messageText = newMessage.trim();
-    const replyData = replyingTo ? {
-      id: replyingTo.id,
-      text: replyingTo.text,
-      userId: replyingTo.userId
-    } : null;
-    
-    // Clear input and states immediately
-    setNewMessage('');
-    setReplyingTo(null);
-    localStorage.removeItem(`messageDraft_${topic.id}_${user?.uid}`);
-    
-    // Reset textarea height to original size
-    if (inputRef.current) {
-      inputRef.current.style.height = '42px';
-    }
-
-    try {
-      let mediaData = null;
-      if (selectedFile) {
-        setUploadingMedia(true);
-        mediaData = await uploadMedia(selectedFile);
-      }
-
-      const chatRef = ref(rtdb, `topicChats/${topic.id}`);
-      const messageData = {
-        text: messageText,
-        userId: user.uid,
-        partnerId: partner.uid,
-        userName: user.displayName || 'User',
-        timestamp: serverTimestamp(),
-        delivered: false,
-        read: false,
-        ...(mediaData && {
-          media: {
-            url: mediaData.url,
-            type: selectedFile.type,
-            name: selectedFile.name,
-            publicId: mediaData.publicId,
-            resourceType: mediaData.resourceType,
-            format: mediaData.format
-          }
-        }),
-        ...(replyData && { replyTo: replyData })
-      };
-
-      // Send message
-      const newMessageRef = await push(chatRef, messageData);
-
-      // Mark as delivered immediately if partner is online
-      if (isOnline) {
-        update(ref(rtdb, `topicChats/${topic.id}/${newMessageRef.key}`), {
-          delivered: true
-        });
-      }
-
-      if (partner?.uid) {
-        const notificationRef = ref(rtdb, `notifications/${partner.uid}`);
-        const notificationData = {
-          type: 'chat_message',
-          senderName: user.displayName || 'Your partner',
-          topicTitle: topic.question,
-          message: messageData.media ? 'Sent a media message' : messageText,
-          timestamp: serverTimestamp(),
-          topicId: topic.id
-        };
-        
-        await update(notificationRef, {
-          [Date.now()]: notificationData
-        });
-      }
-      
-      setSelectedFile(null);
-      setPreviewUrl(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      scrollToBottom();
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setError('Failed to send message. Please try again.');
-      setTimeout(() => setError(null), 3000);
-    } finally {
-      setUploadingMedia(false);
-    }
-  };
-
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (mediaMenuRef.current && !mediaMenuRef.current.contains(event.target)) {
-        setShowMediaMenu(false);
-      }
-      if (!event.target.closest('.emoji-picker-container') && 
-          !event.target.closest('.emoji-button')) {
-        setShowEmojiPicker(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
 
   const handleCameraClick = async () => {
     try {
@@ -593,232 +634,559 @@ const TopicChat = ({ topic, onClose }) => {
     }
   };
 
-  // Add cleanup effect
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setError(null);
+      setUploadingMedia(true);
+
+      // Validate file first
+      await validateFile(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviewUrl(reader.result);
+        setSelectedFile(file);
+      };
+      reader.readAsDataURL(file);
+      
+      // Close media menu
+      setShowMediaMenu(false);
+    } catch (error) {
+      console.error('File validation error:', error);
+      setError(error.message);
+      setSelectedFile(null);
+      setPreviewUrl(null);
+    } finally {
+      setUploadingMedia(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleReply = (message) => {
+    setReplyingTo(message);
+  };
+
+  const startEditing = (message) => {
+    setEditingMessage(message);
+    setNewMessage(message.text);
+    setShowMediaMenu(false);
+    setShowEmojiPicker(false);
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
+  const handleSendMessage = async (e) => {
+    if (e) {
+      e.preventDefault();
+    }
+
+    const messageText = newMessage.trim();
+    if (!messageText) return;
+
+    if (editingMessage) {
+      await handleEditMessage(editingMessage.id, messageText);
+      return;
+    }
+
+    if (!isOnline || !partner?.uid) return;
+
+    // Store message text and reply info before clearing
+    const replyData = replyingTo ? {
+      id: replyingTo.id,
+      text: replyingTo.text,
+      userId: replyingTo.userId
+    } : null;
+    
+    // Clear input and states immediately
+    setNewMessage('');
+    setReplyingTo(null);
+    localStorage.removeItem(`messageDraft_${topic.id}_${user?.uid}`);
+    
+    // Reset textarea height
+    if (inputRef.current) {
+      inputRef.current.style.height = '42px';
+    }
+
+    try {
+      let mediaData = null;
+      if (selectedFile) {
+        setUploadingMedia(true);
+        mediaData = await uploadMedia(selectedFile);
+      }
+
+      const chatRef = ref(rtdb, `topicChats/${topic.id}`);
+      const messageData = {
+        text: messageText,
+        userId: user.uid,
+        partnerId: partner.uid,
+        userName: user.displayName || 'User',
+        timestamp: serverTimestamp(),
+        delivered: false,
+        read: false,
+        ...(mediaData && {
+          media: {
+            url: mediaData.url,
+            type: selectedFile.type,
+            name: selectedFile.name,
+            publicId: mediaData.publicId,
+            resourceType: mediaData.resourceType,
+            format: mediaData.format
+          }
+        }),
+        ...(replyData && { replyTo: replyData })
+      };
+
+      const newMessageRef = await push(chatRef, messageData);
+
+      if (isOnline) {
+        update(ref(rtdb, `topicChats/${topic.id}/${newMessageRef.key}`), {
+          delivered: true
+        });
+      }
+
+      // Clear media states
+      if (selectedFile) {
+        setSelectedFile(null);
+        setPreviewUrl(null);
+        setUploadingMedia(false);
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      setError('Failed to send message. Please try again.');
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  const cancelEditing = () => {
+    setEditingMessage(null);
+    setNewMessage('');
+    if (inputRef.current) {
+      inputRef.current.style.height = '42px';
+    }
+  };
+
+  const handleDeleteMessage = async (messageId, deleteForEveryone) => {
+    try {
+      const chatRef = ref(rtdb, `topicChats/${topic.id}/${messageId}`);
+      
+      if (deleteForEveryone) {
+        // Delete message completely
+        await remove(chatRef);
+        // Update local state immediately
+        setMessages(prevMessages => prevMessages.filter(msg => msg.id !== messageId));
+      } else {
+        // Add this message ID to user's deleted messages
+        const userDeletedRef = ref(rtdb, `deletedMessages/${user.uid}/${topic.id}`);
+        await update(userDeletedRef, {
+          [messageId]: serverTimestamp()
+        });
+        // Update local state immediately
+        setMessages(prevMessages => prevMessages.filter(msg => msg.id !== messageId));
+      }
+    } catch (error) {
+      console.error('Error deleting message:', error);
+      setError('Failed to delete message. Please try again.');
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  const handleEditMessage = async (messageId, newText) => {
+    try {
+      const messageRef = ref(rtdb, `topicChats/${topic.id}/${messageId}`);
+      await update(messageRef, {
+        text: newText,
+        edited: true,
+        editedAt: serverTimestamp()
+      });
+      // Clear input and reset states after successful edit
+      setNewMessage('');
+      setEditingMessage(null);
+      if (inputRef.current) {
+        inputRef.current.style.height = '42px';
+      }
+    } catch (error) {
+      console.error('Error editing message:', error);
+      setError('Failed to edit message. Please try again.');
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Check for supported MIME types
+      const mimeType = 'audio/webm;codecs=opus';
+      const options = { mimeType };
+      
+      const mediaRecorder = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        try {
+          setUploadingMedia(true);
+          
+          // Create audio blob
+          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+          const file = new File([audioBlob], 'voice-message.webm', { type: mimeType });
+
+          // Upload to Cloudinary
+          const mediaData = await uploadMedia(file);
+          
+          // Create message with audio
+          const chatRef = ref(rtdb, `topicChats/${topic.id}`);
+          const messageData = {
+            userId: user.uid,
+            partnerId: partner.uid,
+            userName: user.displayName || 'User',
+            timestamp: serverTimestamp(),
+            delivered: false,
+            read: false,
+            media: {
+              url: mediaData.url,
+              type: 'audio/webm',
+              name: 'Voice message',
+              publicId: mediaData.publicId,
+              resourceType: 'video', // Cloudinary treats audio as video resource
+              format: 'webm',
+              duration: recordingDuration
+            }
+          };
+
+          // Send message
+          const newMessageRef = await push(chatRef, messageData);
+
+          if (isOnline) {
+            update(ref(rtdb, `topicChats/${topic.id}/${newMessageRef.key}`), {
+              delivered: true
+            });
+          }
+        } catch (error) {
+          console.error('Error sending voice message:', error);
+          setError('Failed to send voice message. Please try again.');
+          setTimeout(() => setError(null), 3000);
+        } finally {
+          setUploadingMedia(false);
+          // Clean up
+          stream.getTracks().forEach(track => track.stop());
+          setIsRecording(false);
+          setRecordingDuration(0);
+          clearInterval(recordingTimerRef.current);
+        }
+      };
+
+      // Start recording with smaller timeslices for better data collection
+      mediaRecorder.start(100); // Record in 100ms chunks
+      setIsRecording(true);
+      
+      // Start duration timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      setError('Could not access microphone. Please check your permissions.');
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      clearInterval(recordingTimerRef.current);
+    }
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      clearInterval(recordingTimerRef.current);
+      setIsRecording(false);
+      setRecordingDuration(0);
+    }
+  };
+
+  // Add cleanup for recording when component unmounts
   useEffect(() => {
     return () => {
-      // Clear draft when component unmounts
-      if (!newMessage.trim()) {
-        localStorage.removeItem(`messageDraft_${topic.id}_${user?.uid}`);
+      if (mediaRecorderRef.current && isRecording) {
+        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+        clearInterval(recordingTimerRef.current);
       }
     };
-  }, [topic.id, user?.uid, newMessage]);
-
-  // Add viewport height adjustment for mobile
-  useEffect(() => {
-    const adjustViewportHeight = () => {
-      const vh = window.innerHeight * 0.01;
-      document.documentElement.style.setProperty('--vh', `${vh}px`);
-    };
-
-    window.addEventListener('resize', adjustViewportHeight);
-    window.addEventListener('orientationchange', adjustViewportHeight);
-    adjustViewportHeight();
-
-    return () => {
-      window.removeEventListener('resize', adjustViewportHeight);
-      window.removeEventListener('orientationchange', adjustViewportHeight);
-    };
-  }, []);
+  }, [isRecording]);
 
   if (loading) {
     return <div className="text-center py-4">Loading messages...</div>;
   }
 
   return (
-    <div className="fixed inset-0 bg-[#efeae2] dark:bg-[#0c1317] z-50">
-      <div className="h-full flex flex-col">
-        {/* Header - now with fixed positioning */}
-        <div className="fixed top-0 left-0 right-0 z-[51] px-3 sm:px-4 py-2 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db] dark:border-[#2f3b44] flex items-center justify-between">
-          <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
-            <div className="flex flex-col min-w-0 flex-1">
+    <div className="fixed inset-0 bg-[#efeae2] dark:bg-[#0c1317] z-50 flex flex-col h-[100vh] h-[calc(var(--vh,1vh)*100)]">
+      {/* Header */}
+      <div className="flex-none px-3 sm:px-4 py-2 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db] dark:border-[#2f3b44] flex items-center justify-between">
+        <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
+          <div className="flex flex-col min-w-0 flex-1">
+            <div className="flex items-center space-x-2">
               <h3 className="text-[15px] sm:text-[16px] font-medium text-[#111b21] dark:text-[#e9edef] leading-tight truncate">
                 {partner?.displayName || 'Partner'}
               </h3>
-              <p className="text-[12px] sm:text-[13px] text-[#667781] dark:text-[#8696a0] leading-tight mt-0.5 truncate">
-                {topic.question}
-              </p>
+              {isOnline && (
+                <div className="relative flex-none">
+                  <div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>
+                  <div className="absolute inset-0 w-2.5 h-2.5 bg-green-500 rounded-full animate-ping opacity-75"></div>
+                </div>
+              )}
+            </div>
+            <p className="text-[12px] sm:text-[13px] text-[#667781] dark:text-[#8696a0] leading-tight mt-0.5 truncate">
+              {topic.question}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={onClose}
+          className="flex-none p-1.5 sm:p-2 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors ml-2"
+        >
+          <XMarkIcon className="h-5 w-5" />
+        </button>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-[3%] sm:px-[5%] py-3 sm:py-4 space-y-1">
+        {messages.map((message) => (
+          <Message
+            key={message.id}
+            message={message}
+            isOwnMessage={message.userId === user.uid}
+            user={user}
+            onReply={handleReply}
+            onImageClick={setViewingImage}
+            messageRefs={messageRefs}
+            onDelete={handleDeleteMessage}
+            onEdit={handleEditMessage}
+            onStartEdit={startEditing}
+          />
+        ))}
+        {partnerTyping && (
+          <div className="flex items-center space-x-2 text-[#667781] dark:text-[#8696a0] animate-fade-in">
+            <span className="text-sm">Partner is typing</span>
+            <div className="flex space-x-1">
+              <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+              <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '200ms' }}></span>
+              <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '400ms' }}></span>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="flex-none p-1.5 sm:p-2 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors ml-2"
-          >
-            <XMarkIcon className="h-5 w-5" />
-          </button>
-        </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
 
-        {/* Messages - with adjusted padding for fixed header */}
-        <div className="flex-1 overflow-y-auto px-[3%] sm:px-[5%] py-3 sm:py-4 space-y-1 bg-[#efeae2] dark:bg-[#0c1317] mt-[60px]">
-          {messages.map((message) => (
-            <Message
-              key={message.id}
-              message={message}
-              isOwnMessage={message.userId === user.uid}
-              user={user}
-              onReply={handleReply}
-              onImageClick={setViewingImage}
-              messageRefs={messageRefs}
-            />
-          ))}
-          {partnerTyping && (
-            <div className="flex items-center space-x-2 text-[#667781] dark:text-[#8696a0] animate-fade-in">
-              <span className="text-sm">Partner is typing</span>
-              <div className="flex space-x-1">
-                <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '200ms' }}></span>
-                <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '400ms' }}></span>
+      {/* Input area */}
+      <div className="flex-none bg-[#f0f2f5] dark:bg-[#202c33] px-2 sm:px-4 py-2 relative">
+        {editingMessage && (
+          <div className="absolute left-0 right-0 -top-10 bg-blue-500 dark:bg-blue-600 px-4 py-2 flex items-center justify-between text-white">
+            <span className="text-sm">Editing message</span>
+            <button
+              onClick={cancelEditing}
+              className="p-1 hover:bg-white/10 rounded-full"
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
+          </div>
+        )}
+        {replyingTo && !editingMessage && (
+          <div className="flex items-center justify-between bg-[#fff] dark:bg-[#2a3942] px-3 sm:px-4 py-2 -mb-1 mx-1 rounded-t-lg">
+            <div className="flex items-start space-x-2 min-w-0 flex-1">
+              <div className="w-0.5 h-full bg-[#00a884] self-stretch flex-none"/>
+              <div className="flex flex-col min-w-0 py-0.5">
+                <span className="text-[#00a884] dark:text-[#00a884] text-[12px] sm:text-[13px] font-medium">
+                  {replyingTo.userId === user.uid ? 'You' : 'Partner'}
+                </span>
+                <span className="text-[#667781] dark:text-[#8696a0] text-[12px] sm:text-[13px] truncate">
+                  {replyingTo.text || 'Media message'}
+                </span>
               </div>
             </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input area - now with sticky positioning */}
-        <div className="sticky bottom-0 z-10 flex-none bg-[#f0f2f5] dark:bg-[#202c33] px-2 sm:px-4 py-2 relative">
-          {replyingTo && (
-            <div className="flex items-center justify-between bg-[#fff] dark:bg-[#2a3942] px-3 sm:px-4 py-2 -mb-1 mx-1 rounded-t-lg">
-              <div className="flex items-start space-x-2 min-w-0 flex-1">
-                <div className="w-0.5 h-full bg-[#00a884] self-stretch flex-none"/>
-                <div className="flex flex-col min-w-0 py-0.5">
-                  <span className="text-[#00a884] dark:text-[#00a884] text-[12px] sm:text-[13px] font-medium">
-                    {replyingTo.userId === user.uid ? 'You' : 'Partner'}
-                  </span>
-                  <span className="text-[#667781] dark:text-[#8696a0] text-[12px] sm:text-[13px] truncate">
-                    {replyingTo.text || 'Media message'}
-                  </span>
-                </div>
-              </div>
-              <button 
-                onClick={() => setReplyingTo(null)} 
-                className="p-1 -mr-1 text-[#667781] dark:text-[#8696a0] hover:text-[#3b4a54] dark:hover:text-[#e9edef] flex-none"
-              >
-                <XMarkIcon className="h-5 w-5" />
-              </button>
-            </div>
-          )}
-          
-          <div className="relative flex items-start space-x-1 sm:space-x-2 mx-1">
-            <div className="relative flex-none self-end">
+            <button 
+              onClick={() => setReplyingTo(null)} 
+              className="p-1 -mr-1 text-[#667781] dark:text-[#8696a0] hover:text-[#3b4a54] dark:hover:text-[#e9edef] flex-none"
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
+          </div>
+        )}
+        <div className="flex items-end space-x-2">
+          <div className="flex-1 bg-white dark:bg-[#2a3942] rounded-lg flex items-end">
+            {/* Add media button */}
+            <div className="flex items-center px-2 py-2">
               <button
+                type="button"
                 onClick={handleMediaClick}
-                className="p-1.5 sm:p-2 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef]"
+                className="p-1 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                 disabled={uploadingMedia}
               >
                 {uploadingMedia ? (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#00a884]"></div>
-                  </div>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#00a884]"></div>
                 ) : (
-                  <PhotoIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+                  <PhotoIcon className="h-6 w-6" />
                 )}
               </button>
             </div>
-
-            <div className="flex-1 min-w-0">
-              <textarea
-                ref={inputRef}
-                value={newMessage}
-                onChange={handleMessageChange}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-                placeholder="Type a message"
-                className="w-full rounded-lg pl-3 sm:pl-4 pr-3 sm:pr-4 py-2 bg-white dark:bg-[#2a3942] focus:outline-none text-[14px] sm:text-[15px] text-[#111b21] dark:text-[#d1d7db] placeholder-[#667781] dark:placeholder-[#8696a0] resize-none overflow-y-auto"
-                style={{ 
-                  minHeight: '40px',
-                  maxHeight: '100px'
-                }}
-              />
-            </div>
-
-            <div className="flex-none self-end">
+            <textarea
+              ref={inputRef}
+              value={newMessage}
+              onChange={handleMessageChange}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+                if (e.key === 'Escape' && editingMessage) {
+                  cancelEditing();
+                }
+              }}
+              placeholder={editingMessage ? "Edit message..." : "Type a message"}
+              className="flex-1 max-h-[100px] min-h-[42px] px-3 py-2.5 bg-transparent border-none focus:ring-0 text-[15px] placeholder-[#3b4a54] dark:placeholder-[#8696a0] resize-none"
+              style={{ height: '42px' }}
+            />
+            <div className="flex items-center px-2 py-2">
               <button
-                onClick={handleSendMessage}
-                disabled={!newMessage.trim() && !selectedFile}
-                className="p-1.5 sm:p-2 text-[#54656f] hover:text-[#00a884] dark:text-[#aebac1] dark:hover:text-[#00a884] disabled:opacity-50 disabled:hover:text-[#54656f] dark:disabled:hover:text-[#aebac1]"
+                type="button"
+                onMouseDown={startRecording}
+                onMouseUp={stopRecording}
+                onTouchStart={startRecording}
+                onTouchEnd={stopRecording}
+                className="p-1 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                disabled={uploadingMedia}
               >
-                <PaperAirplaneIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+                <MicrophoneIcon className={`h-6 w-6 ${isRecording ? 'text-red-500' : ''}`} />
               </button>
             </div>
           </div>
 
-          {/* Media menu */}
-          {showMediaMenu && (
-            <div 
-              ref={mediaMenuRef}
-              className="absolute bottom-full left-2 sm:left-4 mb-[2px] w-[186px] bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden z-50"
+          {/* Send button */}
+          {!isRecording && (
+            <button
+              onClick={handleSendMessage}
+              disabled={!newMessage.trim() && !selectedFile}
+              className={`p-2 rounded-full ${
+                (!newMessage.trim() && !selectedFile)
+                  ? 'text-[#8696a0] dark:text-[#8696a0]'
+                  : 'text-white bg-[#00a884] hover:bg-[#06cf9c] dark:bg-[#00a884] dark:hover:bg-[#06cf9c]'
+              }`}
             >
-              <div className="py-[6px]">
-                <label
-                  className="flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] cursor-pointer transition-colors"
-                  onClick={() => {
-                    fileInputRef.current?.click();
-                    setShowMediaMenu(false);
-                  }}
-                >
-                  <PhotoIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
-                  <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Photos & Videos</span>
-                </label>
-
-                <button
-                  onClick={() => {
-                    handleCameraClick();
-                    setShowMediaMenu(false);
-                  }}
-                  className="w-full flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] transition-colors"
-                  disabled={uploadingMedia}
-                >
-                  <CameraIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
-                  <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Camera</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Media Preview */}
-          {selectedFile && (
-            <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden">
-              <div className="p-2 sm:p-3 flex items-center justify-between">
-                <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
-                  {previewUrl && (
-                    <img 
-                      src={previewUrl} 
-                      alt="Preview" 
-                      className="h-14 w-14 sm:h-16 sm:w-16 object-cover rounded-lg flex-none"
-                    />
-                  )}
-                  <span className="text-sm text-[#111b21] dark:text-[#e9edef] truncate">
-                    {selectedFile.name}
-                  </span>
-                </div>
-                <button
-                  onClick={() => {
-                    setSelectedFile(null);
-                    setPreviewUrl(null);
-                    if (fileInputRef.current) {
-                      fileInputRef.current.value = '';
-                    }
-                  }}
-                  className="p-1.5 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-[#f0f2f5] dark:hover:bg-[#182229] flex-none ml-2"
-                  disabled={uploadingMedia}
-                >
-                  <XCircleIcon className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Error Message */}
-          {error && (
-            <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-200 p-2 sm:p-3 rounded-lg shadow-lg">
-              {error}
-            </div>
+              {editingMessage ? (
+                <CheckIcon className="h-6 w-6" />
+              ) : (
+                <PaperAirplaneIcon className="h-6 w-6" />
+              )}
+            </button>
           )}
         </div>
+
+        {/* Media menu */}
+        {showMediaMenu && (
+          <div 
+            ref={mediaMenuRef}
+            className="absolute bottom-full left-2 sm:left-4 mb-[2px] w-[186px] bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden z-50"
+          >
+            <div className="py-[6px]">
+              <label
+                className="flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] cursor-pointer transition-colors"
+                onClick={() => {
+                  fileInputRef.current?.click();
+                  setShowMediaMenu(false);
+                }}
+              >
+                <PhotoIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
+                <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Photos & Videos</span>
+              </label>
+
+              <button
+                onClick={() => {
+                  handleCameraClick();
+                  setShowMediaMenu(false);
+                }}
+                className="w-full flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] transition-colors"
+                disabled={uploadingMedia}
+              >
+                <CameraIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
+                <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Camera</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Media Preview */}
+        {selectedFile && (
+          <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden">
+            <div className="p-2 sm:p-3 flex items-center justify-between">
+              <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
+                {previewUrl && (
+                  <img 
+                    src={previewUrl} 
+                    alt="Preview" 
+                    className="h-14 w-14 sm:h-16 sm:w-16 object-cover rounded-lg flex-none"
+                  />
+                )}
+                <span className="text-sm text-[#111b21] dark:text-[#e9edef] truncate">
+                  {selectedFile.name}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedFile(null);
+                  setPreviewUrl(null);
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                  }
+                }}
+                className="p-1.5 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-[#f0f2f5] dark:hover:bg-[#182229] flex-none ml-2"
+                disabled={uploadingMedia}
+              >
+                <XCircleIcon className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Error Message */}
+        {error && (
+          <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-200 p-2 sm:p-3 rounded-lg shadow-lg">
+            {error}
+          </div>
+        )}
       </div>
+
+      {/* Hidden file inputs */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,video/*"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+      <input
+        type="file"
+        ref={cameraInputRef}
+        accept="image/*"
+        capture="environment"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
 
       {/* Image Viewer Modal */}
       {viewingImage && (
@@ -827,6 +1195,24 @@ const TopicChat = ({ topic, onClose }) => {
           onClose={() => setViewingImage(null)} 
         />
       )}
+
+      <style jsx global>{`
+        .audio-player {
+          --webkit-appearance: none;
+          background: transparent;
+        }
+        .audio-player::-webkit-media-controls-panel {
+          background: transparent;
+        }
+        .audio-player::-webkit-media-controls-current-time-display,
+        .audio-player::-webkit-media-controls-time-remaining-display {
+          color: #667781;
+        }
+        .dark .audio-player::-webkit-media-controls-current-time-display,
+        .dark .audio-player::-webkit-media-controls-time-remaining-display {
+          color: #8696a0;
+        }
+      `}</style>
     </div>
   );
 };

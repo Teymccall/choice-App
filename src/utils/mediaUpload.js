@@ -48,50 +48,44 @@ export const uploadMedia = async (file) => {
 };
 
 // Function to validate file before upload
-export const validateFile = (file) => {
-  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-  const ALLOWED_TYPES = [
-    'image/jpeg',
-    'image/png',
-    'image/gif',
-    'image/heic',  // Added HEIC support
-    'image/heif'   // Added HEIF support
-  ];
-
+export const validateFile = async (file) => {
+  // Get file extension
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  
+  // Check if file exists
   if (!file) {
-    throw new Error('Please select a file to upload');
-  }
-
-  // Check file size
-  if (file.size > MAX_FILE_SIZE) {
-    const sizeMB = (file.size / 1024 / 1024).toFixed(1);
-    throw new Error(`File size (${sizeMB}MB) exceeds the 10MB limit. Please choose a smaller file.`);
+    throw new Error('Please select a file');
   }
 
   // Check file type
-  if (!ALLOWED_TYPES.includes(file.type)) {
-    throw new Error(`File type "${file.type}" is not supported. Please use JPEG, PNG, GIF, HEIC, or HEIF images.`);
+  if (file.type.startsWith('image/')) {
+    // Image validation
+    const allowedImageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/heic', 'image/heif'];
+    if (!allowedImageTypes.includes(file.type)) {
+      throw new Error('Please use JPEG, PNG, GIF, HEIC, or HEIF images.');
+    }
+  } else if (file.type.startsWith('audio/')) {
+    // Audio validation
+    const allowedAudioTypes = ['audio/webm', 'audio/mp3', 'audio/mpeg', 'audio/wav'];
+    if (!allowedAudioTypes.includes(file.type)) {
+      throw new Error('Unsupported audio format. Please use MP3, WAV, or WebM.');
+    }
+  } else if (file.type.startsWith('video/')) {
+    // Video validation
+    const allowedVideoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
+    if (!allowedVideoTypes.includes(file.type)) {
+      throw new Error('Please use MP4, WebM, or QuickTime videos.');
+    }
+  } else {
+    throw new Error('Unsupported file type. Please use images, audio, or videos.');
   }
 
-  // Additional image validation
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      if (img.width === 0 || img.height === 0) {
-        reject(new Error('The selected file appears to be corrupted or invalid. Please choose another image.'));
-      }
-      resolve(true);
-    };
-    
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('The selected file could not be loaded as an image. Please choose a valid image file.'));
-    };
-    
-    img.src = objectUrl;
-  });
+  // Check file size (max 50MB)
+  const maxSize = 50 * 1024 * 1024; // 50MB in bytes
+  if (file.size > maxSize) {
+    throw new Error('File size must be less than 50MB');
+  }
+
+  return true;
 }; 
 

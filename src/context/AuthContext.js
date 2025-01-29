@@ -175,6 +175,8 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     let mounted = true;
     let authTimeout = null;
+    let presenceRef = null;
+    let userStatusRef = null;
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       try {
@@ -196,6 +198,34 @@ export const AuthProvider = ({ children }) => {
             
             if (navigator.onLine) {
               try {
+                // Set up presence system
+                presenceRef = ref(rtdb, '.info/connected');
+                userStatusRef = ref(rtdb, `connections/${user.uid}`);
+
+                onValue(presenceRef, async (snapshot) => {
+                  if (snapshot.val() === false) return;
+
+                  // When we disconnect, remove the connection
+                  await onDisconnect(userStatusRef).remove();
+
+                  // Check if there's an existing partnership
+                  const userDoc = await getDoc(doc(db, 'users', user.uid));
+                  if (userDoc.exists() && userDoc.data().partnerId) {
+                    const partnerId = userDoc.data().partnerId;
+                    // Reestablish connection in RTDB
+                    await set(userStatusRef, {
+                      partnerId: partnerId,
+                      lastActive: rtdbTimestamp()
+                    });
+                    
+                    // Get and set partner data
+                    const partnerDoc = await getDoc(doc(db, 'users', partnerId));
+                    if (partnerDoc.exists()) {
+                      setPartner(partnerDoc.data());
+                    }
+                  }
+                });
+
                 await initializeUserData(user);
               } catch (err) {
                 console.error('Error initializing user data:', err);
@@ -205,6 +235,15 @@ export const AuthProvider = ({ children }) => {
             setUser(null);
             setPartner(null);
             setActiveInviteCode(null);
+            
+            // Clean up presence refs
+            if (presenceRef) {
+              off(presenceRef);
+            }
+            if (userStatusRef) {
+              off(userStatusRef);
+              await remove(userStatusRef);
+            }
           }
           setIsLoading(false);
         }, 1000);
@@ -220,6 +259,12 @@ export const AuthProvider = ({ children }) => {
       mounted = false;
       if (authTimeout) {
         clearTimeout(authTimeout);
+      }
+      if (presenceRef) {
+        off(presenceRef);
+      }
+      if (userStatusRef) {
+        off(userStatusRef);
       }
       unsubscribe();
     };
@@ -331,7 +376,7 @@ export const AuthProvider = ({ children }) => {
       if (!isOnline) {
         throw new Error('You are currently offline. Please check your internet connection.');
       }
-
+      
       if (!user) {
         throw new Error('You must be logged in to connect with a partner.');
       }
@@ -344,7 +389,7 @@ export const AuthProvider = ({ children }) => {
       const usersRef = collection(db, 'users');
       const querySnapshot = await getDocs(usersRef);
       const now = Timestamp.now();
-
+      
       // Find user with matching invite code
       let validPartnerDoc = null;
       querySnapshot.forEach(doc => {
@@ -365,7 +410,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       const partnerId = validPartnerDoc.id;
-
+      
       if (partnerId === user.uid) {
         throw new Error('You cannot connect with yourself.');
       }
@@ -377,7 +422,7 @@ export const AuthProvider = ({ children }) => {
         const matchingCode = partnerData.inviteCodes.find(code => 
           code.code === inviteCode.toUpperCase()
         );
-
+        
         // Update partner's document
         const partnerRef = doc(db, 'users', partnerId);
         batch.update(partnerRef, {
@@ -400,12 +445,25 @@ export const AuthProvider = ({ children }) => {
         }
       });
 
-      // Update RTDB connection status
-      const connectionRef = ref(rtdb, `connections/${user.uid}`);
-      await set(connectionRef, {
-        partnerId: partnerId,
-        lastActive: rtdbTimestamp()
-      });
+      // Update RTDB connection status with onDisconnect handler
+      const userConnectionRef = ref(rtdb, `connections/${user.uid}`);
+      const partnerConnectionRef = ref(rtdb, `connections/${partnerId}`);
+
+      // Set up disconnect handlers for both users
+      await onDisconnect(userConnectionRef).remove();
+      await onDisconnect(partnerConnectionRef).remove();
+
+      // Set current connection status
+      await Promise.all([
+        set(userConnectionRef, {
+          partnerId: partnerId,
+          lastActive: rtdbTimestamp()
+        }),
+        set(partnerConnectionRef, {
+          partnerId: user.uid,
+          lastActive: rtdbTimestamp()
+        })
+      ]);
 
       return partnerId;
     } catch (err) {
@@ -443,7 +501,7 @@ export const AuthProvider = ({ children }) => {
       const userRef = doc(db, 'users', user.uid);
       
       await safeWrite(async () => {
-        const userDoc = await getDoc(userRef);
+      const userDoc = await getDoc(userRef);
         if (!userDoc.exists()) {
           throw new Error('User document not found');
         }
@@ -475,11 +533,13 @@ export const AuthProvider = ({ children }) => {
         throw new Error('You are not currently connected with a partner.');
       }
 
-      // First clean up RTDB connections
+      // First clean up RTDB connections and cancel onDisconnect operations
       const userConnectionRef = ref(rtdb, `connections/${user.uid}`);
       const partnerConnectionRef = ref(rtdb, `connections/${partner.uid}`);
       
       await Promise.all([
+        onDisconnect(userConnectionRef).cancel(),
+        onDisconnect(partnerConnectionRef).cancel(),
         remove(userConnectionRef),
         remove(partnerConnectionRef)
       ]);
@@ -499,7 +559,7 @@ export const AuthProvider = ({ children }) => {
           partnerId: null,
           inviteCodes: []
         });
-
+        
         return batch.commit();
       });
 
