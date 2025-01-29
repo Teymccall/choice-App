@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -138,6 +138,86 @@ export const AuthProvider = ({ children }) => {
   const auth = getAuth();
   const googleProvider = new GoogleAuthProvider();
 
+  // Add refs to store cleanup functions
+  const presenceRef = useRef(null);
+  const userStatusRef = useRef(null);
+  const listenerCleanups = useRef([]);
+
+  // Setup database listeners
+  const setupDatabaseListeners = async (user) => {
+    try {
+      // Set up presence system
+      presenceRef.current = ref(rtdb, '.info/connected');
+      userStatusRef.current = ref(rtdb, `connections/${user.uid}`);
+
+      const presenceUnsubscribe = onValue(presenceRef.current, async (snapshot) => {
+        if (!snapshot.val()) return;
+
+        try {
+          // When we disconnect, remove the connection
+          await onDisconnect(userStatusRef.current).remove();
+
+          // Check if there's an existing partnership
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists() && userDoc.data().partnerId) {
+            const partnerId = userDoc.data().partnerId;
+            
+            // Set current connection status
+            await set(userStatusRef.current, {
+              partnerId: partnerId,
+              lastActive: rtdbTimestamp(),
+              status: 'online'
+            });
+            
+            // Get and set partner data
+            const partnerDoc = await getDoc(doc(db, 'users', partnerId));
+            if (partnerDoc.exists()) {
+              setPartner(partnerDoc.data());
+            }
+          } else {
+            // Set basic connection status if no partner
+            await set(userStatusRef.current, {
+              lastActive: rtdbTimestamp(),
+              status: 'online'
+            });
+          }
+        } catch (error) {
+          console.error('Error in presence system:', error);
+        }
+      });
+
+      listenerCleanups.current.push(presenceUnsubscribe);
+    } catch (error) {
+      console.error('Error setting up database listeners:', error);
+    }
+  };
+
+  // Cleanup database listeners
+  const cleanupDatabaseListeners = async () => {
+    try {
+      // Clean up all listeners
+      listenerCleanups.current.forEach(cleanup => cleanup());
+      listenerCleanups.current = [];
+
+      // Clean up presence refs
+      if (presenceRef.current) {
+        off(presenceRef.current);
+      }
+      if (userStatusRef.current) {
+        // Cancel any onDisconnect operations
+        await onDisconnect(userStatusRef.current).cancel();
+        // Remove the connection
+        await remove(userStatusRef.current);
+      }
+
+      // Reset states
+      setPartner(null);
+      setActiveInviteCode(null);
+    } catch (error) {
+      console.error('Error cleaning up database listeners:', error);
+    }
+  };
+
   // Handle authentication errors
   const handleAuthError = (error) => {
     setError(null);
@@ -173,99 +253,34 @@ export const AuthProvider = ({ children }) => {
 
   // Handle auth state changes
   useEffect(() => {
-    let mounted = true;
-    let authTimeout = null;
-    let presenceRef = null;
-    let userStatusRef = null;
-
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      try {
-        if (!mounted) return;
-
-        if (authTimeout) {
-          clearTimeout(authTimeout);
+      setIsLoading(true);
+      if (user) {
+        // Wait for user to be fully authenticated
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Update user data
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          setUser({
+            ...user,
+            ...userDoc.data()
+          });
+        } else {
+          setUser(user);
         }
-
-        authTimeout = setTimeout(async () => {
-          if (!mounted) return;
-
-          if (user) {
-            setUser({
-              uid: user.uid,
-              email: user.email,
-              displayName: user.displayName
-            });
-            
-            if (navigator.onLine) {
-              try {
-                // Set up presence system
-                presenceRef = ref(rtdb, '.info/connected');
-                userStatusRef = ref(rtdb, `connections/${user.uid}`);
-
-                onValue(presenceRef, async (snapshot) => {
-                  if (snapshot.val() === false) return;
-
-                  // When we disconnect, remove the connection
-                  await onDisconnect(userStatusRef).remove();
-
-                  // Check if there's an existing partnership
-                  const userDoc = await getDoc(doc(db, 'users', user.uid));
-                  if (userDoc.exists() && userDoc.data().partnerId) {
-                    const partnerId = userDoc.data().partnerId;
-                    // Reestablish connection in RTDB
-                    await set(userStatusRef, {
-                      partnerId: partnerId,
-                      lastActive: rtdbTimestamp()
-                    });
-                    
-                    // Get and set partner data
-                    const partnerDoc = await getDoc(doc(db, 'users', partnerId));
-                    if (partnerDoc.exists()) {
-                      setPartner(partnerDoc.data());
-                    }
-                  }
-                });
-
-                await initializeUserData(user);
-              } catch (err) {
-                console.error('Error initializing user data:', err);
-              }
-            }
-          } else {
-            setUser(null);
-            setPartner(null);
-            setActiveInviteCode(null);
-            
-            // Clean up presence refs
-            if (presenceRef) {
-              off(presenceRef);
-            }
-            if (userStatusRef) {
-              off(userStatusRef);
-              await remove(userStatusRef);
-            }
-          }
-          setIsLoading(false);
-        }, 1000);
-      } catch (err) {
-        console.error('Auth state change error:', err);
-        if (mounted) {
-          setIsLoading(false);
-        }
+        
+        // Now it's safe to set up database listeners
+        await setupDatabaseListeners(user);
+      } else {
+        setUser(null);
+        await cleanupDatabaseListeners();
       }
+      setIsLoading(false);
     });
 
     return () => {
-      mounted = false;
-      if (authTimeout) {
-        clearTimeout(authTimeout);
-      }
-      if (presenceRef) {
-        off(presenceRef);
-      }
-      if (userStatusRef) {
-        off(userStatusRef);
-      }
+      cleanupDatabaseListeners();
       unsubscribe();
     };
   }, []);

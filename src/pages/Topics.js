@@ -157,43 +157,32 @@ const Topics = () => {
   // Check for open chat on mount
   useEffect(() => {
     const openTopicChatId = sessionStorage.getItem('openTopicChatId');
-    if (openTopicChatId) {
+    if (openTopicChatId && user?.uid && partner?.uid) {
       // Fetch the topic data and open the chat
       const topicRef = ref(rtdb, `topics/${openTopicChatId}`);
       get(topicRef).then((snapshot) => {
         if (snapshot.exists()) {
           const topicData = snapshot.val();
-          setSelectedTopic({
-            id: openTopicChatId,
-            ...topicData
-          });
+          // Only set the topic if it belongs to the current user pair
+          if (topicData.participants?.includes(user.uid) && 
+              topicData.participants?.includes(partner.uid)) {
+            setSelectedTopic({
+              id: openTopicChatId,
+              ...topicData
+            });
+          }
         }
       });
     }
-  }, []);
+  }, [user?.uid, partner?.uid]);
 
-  // Check for stored topic ID on mount and when topics change
-  useEffect(() => {
-    const storedTopicId = sessionStorage.getItem('openTopicChatId');
-    if (storedTopicId && topics.length > 0) {
-      const topic = topics.find(t => t.id === storedTopicId);
-      if (topic) {
-        setSelectedTopic(topic);
-        // Clear the stored ID after opening
-        sessionStorage.removeItem('openTopicChatId');
-      }
-    }
-  }, [topics]);
-
-  // Add event listener for opening chat from notifications
+  // Remove the duplicate effect that was clearing the session storage
   useEffect(() => {
     const handleOpenChat = (event) => {
       const { topicId } = event.detail;
       const topic = topics.find(t => t.id === topicId);
       if (topic) {
         setSelectedTopic(topic);
-        // Clear the stored ID since we're handling it
-        sessionStorage.removeItem('openTopicChatId');
       }
     };
 

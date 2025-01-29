@@ -51,6 +51,12 @@ const ImageViewer = ({ image, onClose }) => {
         src={image} 
         alt="Full size" 
         className="max-w-[90vw] max-h-[90vh] object-contain"
+        loading="eager"
+        decoding="sync"
+        onLoad={(e) => {
+          e.target.style.opacity = 1;
+        }}
+        style={{ opacity: 0, transition: 'opacity 0.2s ease-in-out' }}
       />
     </div>
   );
@@ -197,7 +203,7 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
 
     return (
       <div 
-        className="rounded-lg overflow-hidden cursor-pointer -mx-[9px] -mt-[6px]"
+        className="rounded-lg overflow-hidden cursor-pointer -mx-[9px] -mt-[6px] relative bg-black/5 dark:bg-white/5"
         onClick={() => onImageClick(message.media.url)}
       >
         <img
@@ -205,7 +211,46 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
           alt="Shared media"
           className="w-full max-h-[300px] object-cover"
           loading="lazy"
+          decoding="async"
+          onLoad={(e) => {
+            e.target.style.opacity = 1;
+          }}
+          style={{ opacity: 0, transition: 'opacity 0.2s ease-in-out' }}
         />
+      </div>
+    );
+  };
+
+  const renderReplyContent = () => {
+    if (!message.replyTo) return null;
+    
+    return (
+      <div 
+        className={`
+          text-[12.8px] mb-0.5 px-3 py-[4px] cursor-pointer flex items-start space-x-2
+          ${isOwnMessage 
+            ? 'bg-[#0b846d]/[0.08] text-[#0b846d]' 
+            : 'bg-[#667781]/[0.08] text-[#667781]'
+          }
+          rounded-[7px] rounded-bl-none w-full hover:opacity-80 transition-opacity
+        `}
+        onClick={handleReplyClick}
+      >
+        <div className="flex-1 min-w-0">
+          <span className="font-medium block">
+            {message.replyTo.userId === user.uid ? 'You' : 'Partner'}
+          </span>
+          {message.replyTo.media ? (
+            <div className="flex items-center space-x-2">
+              <PhotoIcon className="h-4 w-4 flex-shrink-0" />
+              <span className="truncate opacity-80">Photo</span>
+            </div>
+          ) : (
+            <span className="truncate opacity-80">
+              {message.replyTo.text}
+            </span>
+          )}
+        </div>
       </div>
     );
   };
@@ -229,26 +274,7 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
             }
           }}
         >
-          {message.replyTo && !isDeleted && (
-            <div 
-              className={`
-                text-[12.8px] mb-0.5 px-3 py-[4px] cursor-pointer flex flex-col
-                ${isOwnMessage 
-                  ? 'bg-[#0b846d]/[0.08] text-[#0b846d]' 
-                  : 'bg-[#667781]/[0.08] text-[#667781]'
-                }
-                rounded-[7px] rounded-bl-none w-full hover:opacity-80 transition-opacity
-              `}
-              onClick={handleReplyClick}
-            >
-              <span className="font-medium">
-                {message.replyTo.userId === user.uid ? 'You' : 'Partner'}
-              </span>
-              <span className="truncate opacity-80">
-                {message.replyTo.text || 'Media message'}
-              </span>
-            </div>
-          )}
+          {renderReplyContent()}
 
           <div className={`
             relative group
@@ -358,26 +384,36 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
               </h3>
             </div>
             <div className="p-4 space-y-4">
+              <button
+                onClick={() => {
+                  onReply(message);
+                  setShowDeleteModal(false);
+                }}
+                className="w-full px-4 py-2 text-left text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg flex items-center space-x-2"
+              >
+                <ArrowUturnLeftIcon className="h-5 w-5" />
+                <span>Reply</span>
+              </button>
+              {isOwnMessage && message.text && (
+                <button
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    onStartEdit(message);
+                  }}
+                  className="w-full px-4 py-2 text-left text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg flex items-center space-x-2"
+                >
+                  <PencilIcon className="h-5 w-5" />
+                  <span>Edit message</span>
+                </button>
+              )}
               {isOwnMessage && (
-                <>
-                  <button
-                    onClick={() => {
-                      setShowDeleteModal(false);
-                      onStartEdit(message);
-                    }}
-                    className="w-full px-4 py-2 text-left text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg flex items-center space-x-2"
-                  >
-                    <PencilIcon className="h-5 w-5" />
-                    <span>Edit message</span>
-                  </button>
-                  <button
-                    onClick={() => handleDelete(true)}
-                    className="w-full px-4 py-2 text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg flex items-center space-x-2"
-                  >
-                    <TrashIcon className="h-5 w-5" />
-                    <span>Delete for everyone</span>
-                  </button>
-                </>
+                <button
+                  onClick={() => handleDelete(true)}
+                  className="w-full px-4 py-2 text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg flex items-center space-x-2"
+                >
+                  <TrashIcon className="h-5 w-5" />
+                  <span>Delete for everyone</span>
+                </button>
               )}
               <button
                 onClick={() => handleDelete(false)}
@@ -440,13 +476,14 @@ const TopicChat = ({ topic, onClose }) => {
   useEffect(() => {
     if (!user?.uid || !topic?.id) return;
     
+    // Store the current chat ID in session storage
     localStorage.setItem(`lastRead_${topic.id}_${user.uid}`, Date.now().toString());
     localStorage.setItem(`lastChecked_${topic.id}_${user.uid}`, Date.now().toString());
     sessionStorage.setItem('openTopicChatId', topic.id);
     
+    // Only remove session storage if we're actually closing the chat
+    // not just during component cleanup on refresh
     return () => {
-      // Only remove session storage if we're actually closing the chat
-      // not just during component cleanup on refresh
       if (!window.performance.getEntriesByType('navigation').some(entry => entry.type === 'reload')) {
         sessionStorage.removeItem('openTopicChatId');
       }
@@ -644,18 +681,17 @@ const TopicChat = ({ topic, onClose }) => {
 
     try {
       setError(null);
-      setUploadingMedia(true);
-
-      // Validate file first
-      await validateFile(file);
       
-      // Create preview
+      // Create preview URL first, before validation or upload
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreviewUrl(reader.result);
         setSelectedFile(file);
       };
       reader.readAsDataURL(file);
+
+      // Validate file after setting preview
+      await validateFile(file);
       
       // Close media menu
       setShowMediaMenu(false);
@@ -665,7 +701,6 @@ const TopicChat = ({ topic, onClose }) => {
       setSelectedFile(null);
       setPreviewUrl(null);
     } finally {
-      setUploadingMedia(false);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -963,6 +998,21 @@ const TopicChat = ({ topic, onClose }) => {
     };
   }, []);
 
+  // Add click outside handler for media menu
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (mediaMenuRef.current && !mediaMenuRef.current.contains(event.target) && 
+          !event.target.closest('button[data-media-button="true"]')) {
+        setShowMediaMenu(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   if (loading) {
     return <div className="text-center py-4">Loading messages...</div>;
   }
@@ -1066,8 +1116,9 @@ const TopicChat = ({ topic, onClose }) => {
             <div className="flex items-center px-1.5 py-1.5">
               <button
                 type="button"
+                data-media-button="true"
                 onClick={handleMediaClick}
-                className="p-1 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                className="p-1 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors relative"
                 disabled={uploadingMedia}
               >
                 {uploadingMedia ? (
@@ -1077,6 +1128,40 @@ const TopicChat = ({ topic, onClose }) => {
                 )}
               </button>
             </div>
+
+            {/* Media menu */}
+            {showMediaMenu && (
+              <div 
+                ref={mediaMenuRef}
+                className="absolute bottom-16 left-2 w-[186px] bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden z-50"
+              >
+                <div className="py-[6px]">
+                  <label
+                    className="flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] cursor-pointer transition-colors"
+                    onClick={() => {
+                      fileInputRef.current?.click();
+                      setShowMediaMenu(false);
+                    }}
+                  >
+                    <PhotoIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
+                    <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Photos & Videos</span>
+                  </label>
+
+                  <button
+                    onClick={() => {
+                      handleCameraClick();
+                      setShowMediaMenu(false);
+                    }}
+                    className="w-full flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] transition-colors"
+                    disabled={uploadingMedia}
+                  >
+                    <CameraIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
+                    <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Camera</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             <textarea
               ref={inputRef}
               value={newMessage}
@@ -1128,68 +1213,59 @@ const TopicChat = ({ topic, onClose }) => {
         </div>
       </div>
 
-      {/* Media menu */}
-      {showMediaMenu && (
-        <div 
-          ref={mediaMenuRef}
-          className="absolute bottom-full left-2 sm:left-4 mb-[2px] w-[186px] bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden z-50"
-        >
-          <div className="py-[6px]">
-            <label
-              className="flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] cursor-pointer transition-colors"
-              onClick={() => {
-                fileInputRef.current?.click();
-                setShowMediaMenu(false);
-              }}
-            >
-              <PhotoIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
-              <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Photos & Videos</span>
-            </label>
-
-            <button
-              onClick={() => {
-                handleCameraClick();
-                setShowMediaMenu(false);
-              }}
-              className="w-full flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] transition-colors"
-              disabled={uploadingMedia}
-            >
-              <CameraIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
-              <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Camera</span>
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Media Preview */}
       {selectedFile && (
-        <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden">
-          <div className="p-2 sm:p-3 flex items-center justify-between">
-            <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
-              {previewUrl && (
+        <div className="absolute bottom-full left-0 right-0 bg-white dark:bg-[#233138] shadow-lg overflow-hidden z-[55] mb-2">
+          <div className="relative">
+            {previewUrl && selectedFile.type.startsWith('image/') && (
+              <div className="relative w-full h-[250px] bg-black/5 dark:bg-white/5">
                 <img 
                   src={previewUrl} 
                   alt="Preview" 
-                  className="h-14 w-14 sm:h-16 sm:w-16 object-cover rounded-lg flex-none"
+                  className="w-full h-full object-contain"
+                  onLoad={(e) => {
+                    e.target.style.opacity = 1;
+                    window.dispatchEvent(new Event('resize'));
+                  }}
+                  style={{ opacity: 0, transition: 'opacity 0.2s ease-in-out' }}
+                  loading="eager"
+                  decoding="sync"
                 />
-              )}
-              <span className="text-sm text-[#111b21] dark:text-[#e9edef] truncate">
-                {selectedFile.name}
-              </span>
+              </div>
+            )}
+            <div className="p-3 flex items-center justify-between border-t border-gray-200 dark:border-gray-700">
+              <div className="flex items-center space-x-3 min-w-0 flex-1">
+                <div className="flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
+                  {previewUrl && selectedFile.type.startsWith('image/') && (
+                    <img 
+                      src={previewUrl} 
+                      alt="Thumbnail" 
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                    {selectedFile.name}
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedFile(null);
+                  setPreviewUrl(null);
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                  }
+                }}
+                className="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                <XCircleIcon className="h-6 w-6" />
+              </button>
             </div>
-            <button
-              onClick={() => {
-                setSelectedFile(null);
-                setPreviewUrl(null);
-                if (fileInputRef.current) {
-                  fileInputRef.current.value = '';
-                }
-              }}
-              className="p-1.5 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-[#f0f2f5] dark:hover:bg-[#182229] flex-none ml-2"
-              disabled={uploadingMedia}
-            >
-              <XCircleIcon className="h-5 w-5" />
-            </button>
           </div>
         </div>
       )}
