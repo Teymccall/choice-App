@@ -21,6 +21,7 @@ import {
   updateDoc,
   Timestamp,
   arrayUnion,
+  serverTimestamp
 } from 'firebase/firestore';
 import { ref, onValue, set, off, get } from 'firebase/database';
 import { 
@@ -372,6 +373,7 @@ export const AuthProvider = ({ children }) => {
         throw new Error('This user is already connected with someone else');
       }
 
+      // Update Firestore first
       await retryOperation(async () => {
         const batch = writeBatch(db);
         
@@ -389,12 +391,119 @@ export const AuthProvider = ({ children }) => {
         return batch.commit();
       });
 
+      // Then update RTDB for real-time status
+      const userStatusRef = ref(rtdb, `connections/${user.uid}`);
+      const partnerStatusRef = ref(rtdb, `connections/${partnerId}`);
+      
+      await Promise.all([
+        set(userStatusRef, {
+          partnerId: partnerId,
+          status: 'connected',
+          lastUpdated: serverTimestamp()
+        }),
+        set(partnerStatusRef, {
+          partnerId: user.uid,
+          status: 'connected',
+          lastUpdated: serverTimestamp()
+        })
+      ]);
+
+      // Set partner data immediately
       setPartner(partnerData);
     } catch (err) {
       setError(err.message);
       throw err;
     }
   };
+
+  // Add real-time listener for connection status
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    // Listen for connection changes
+    const connectionsRef = ref(rtdb, `connections`);
+    const unsubscribe = onValue(connectionsRef, async (snapshot) => {
+      const connections = snapshot.val();
+      if (!connections) {
+        setPartner(null);
+        return;
+      }
+
+      const myConnection = connections[user.uid];
+      if (!myConnection || myConnection.status === 'disconnected') {
+        setPartner(null);
+        return;
+      }
+
+      const partnerId = myConnection.partnerId;
+      if (!partnerId) {
+        setPartner(null);
+        return;
+      }
+
+      const partnerConnection = connections[partnerId];
+      if (!partnerConnection || partnerConnection.status === 'disconnected') {
+        setPartner(null);
+        return;
+      }
+
+      try {
+        // Fetch latest partner data from Firestore
+        const partnerDoc = await getDoc(doc(db, 'users', partnerId));
+        if (partnerDoc.exists()) {
+          const partnerData = partnerDoc.data();
+          // Only set partner if they're still connected to us
+          if (partnerData.partnerId === user.uid) {
+            setPartner(partnerData);
+          } else {
+            setPartner(null);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching partner data:', err);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user?.uid]);
+
+  // Handle disconnection
+  useEffect(() => {
+    if (!user?.uid || !partner?.uid) return;
+
+    const myConnectionRef = ref(rtdb, `connections/${user.uid}`);
+    const partnerConnectionRef = ref(rtdb, `connections/${partner.uid}`);
+
+    const unsubscribe = onValue(partnerConnectionRef, (snapshot) => {
+      const connection = snapshot.val();
+      if (!connection || connection.status === 'disconnected') {
+        setPartner(null);
+        setDisconnectMessage('Your partner has disconnected');
+      }
+    });
+
+    // Set up disconnect cleanup using the correct RTDB method
+    const onDisconnectHandler = () => {
+      set(myConnectionRef, {
+        partnerId: partner.uid,
+        status: 'disconnected',
+        lastUpdated: serverTimestamp()
+      });
+    };
+
+    // Add disconnect handler
+    window.addEventListener('beforeunload', onDisconnectHandler);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('beforeunload', onDisconnectHandler);
+      set(myConnectionRef, {
+        partnerId: partner.uid,
+        status: 'disconnected',
+        lastUpdated: serverTimestamp()
+      });
+    };
+  }, [user?.uid, partner?.uid]);
 
   const generateInviteCode = async () => {
     try {
@@ -462,15 +571,7 @@ export const AuthProvider = ({ children }) => {
 
       setError(null);
 
-      // Update our own status first
-      const userStatusRef = ref(rtdb, `users/${user.uid}/status`);
-      await set(userStatusRef, {
-        type: 'disconnect',
-        partnerId: partner.uid,
-        timestamp: Date.now()
-      });
-
-      // Update Firestore documents
+      // Update Firestore first
       await retryOperation(async () => {
         const batch = writeBatch(db);
         
@@ -484,12 +585,18 @@ export const AuthProvider = ({ children }) => {
         await batch.commit();
       });
 
+      // Then update RTDB for immediate effect
+      const userConnectionRef = ref(rtdb, `connections/${user.uid}`);
+      const partnerConnectionRef = ref(rtdb, `connections/${partner.uid}`);
+      
+      await Promise.all([
+        set(userConnectionRef, null),
+        set(partnerConnectionRef, null)
+      ]);
+
       // Clear local state
       setPartner(null);
       setDisconnectMessage('You have disconnected from your partner');
-
-      // Clean up our status
-      await set(userStatusRef, null);
       
       console.log('Partnership successfully disconnected');
     } catch (err) {
@@ -498,27 +605,6 @@ export const AuthProvider = ({ children }) => {
       throw err;
     }
   };
-
-  // Update the partner status listener
-  useEffect(() => {
-    if (!user?.uid) return;
-
-    const userStatusRef = ref(rtdb, `users/${user.uid}/status`);
-    onValue(userStatusRef, async (snapshot) => {
-      const status = snapshot.val();
-      if (status?.type === 'disconnect' && status.partnerId === user.uid) {
-        setPartner(null);
-        setDisconnectMessage('Your partner has disconnected');
-        // Clean up Firestore
-        const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, { partnerId: null }).catch(console.error);
-        // Clean up RTDB status
-        await set(userStatusRef, null).catch(console.error);
-      }
-    });
-
-    return () => off(userStatusRef);
-  }, [user?.uid]);
 
   const clearDisconnectMessage = () => {
     setDisconnectMessage(null);

@@ -32,6 +32,112 @@ const formatDate = (timestamp) => {
   return date.toLocaleDateString();
 };
 
+const TopicCard = ({ topic, onRespond, onDiscuss, unreadMessages }) => {
+  const { user, partner } = useAuth();
+  const userResponse = topic.responses?.[user.uid]?.response;
+  const partnerResponse = topic.responses?.[partner?.uid]?.response;
+  const formattedDate = formatDate(topic.createdAt);
+  const partnerName = partner?.displayName || 'Your partner';
+  
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="p-4">
+        <div className="flex flex-col space-y-2">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+            {topic.question}
+          </h3>
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center text-gray-500 dark:text-gray-400">
+              <span>{formattedDate}</span>
+              <span className="mx-2">•</span>
+              <span>{topic.category || 'Custom'}</span>
+            </div>
+          </div>
+          
+          {/* Response Status Indicators */}
+          {userResponse && !partnerResponse && (
+            <div className="flex items-center text-sm text-yellow-600 dark:text-yellow-400">
+              <div className="w-2 h-2 bg-yellow-400 rounded-full mr-2 animate-pulse" />
+              Waiting for {partnerName} to make a choice...
+            </div>
+          )}
+          {partnerResponse && !userResponse && (
+            <div className="flex items-center text-sm text-blue-600 dark:text-blue-400">
+              <div className="w-2 h-2 bg-blue-400 rounded-full mr-2" />
+              {partnerName} has made a choice - your turn!
+            </div>
+          )}
+        </div>
+        
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {!userResponse && (
+            <>
+              <button
+                onClick={() => onRespond(topic.id, 'agree')}
+                className="flex-1 inline-flex items-center justify-center px-3 py-2 text-sm font-medium rounded-full bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50 transition-colors"
+              >
+                <HandThumbUpIcon className="h-5 w-5 mr-1.5" />
+                Agree
+              </button>
+              <button
+                onClick={() => onRespond(topic.id, 'disagree')}
+                className="flex-1 inline-flex items-center justify-center px-3 py-2 text-sm font-medium rounded-full bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 transition-colors"
+              >
+                <HandThumbDownIcon className="h-5 w-5 mr-1.5" />
+                Disagree
+              </button>
+            </>
+          )}
+          {userResponse && (
+            <div className="flex-1 flex items-center space-x-3">
+              <span className={`
+                inline-flex items-center px-3 py-1 rounded-full text-sm font-medium
+                ${userResponse === 'agree' 
+                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                }
+              `}>
+                {userResponse === 'agree' ? (
+                  <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
+                ) : (
+                  <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
+                )}
+                You {userResponse === 'agree' ? 'Agreed' : 'Disagreed'}
+              </span>
+              {partnerResponse && (
+                <span className={`
+                  inline-flex items-center px-3 py-1 rounded-full text-sm font-medium
+                  ${partnerResponse === 'agree' 
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                  }
+                `}>
+                  {partnerResponse === 'agree' ? (
+                    <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
+                  ) : (
+                    <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
+                  )}
+                  {partnerName} {partnerResponse === 'agree' ? 'Agreed' : 'Disagreed'}
+                </span>
+              )}
+            </div>
+          )}
+          <button
+            onClick={() => onDiscuss(topic)}
+            className="flex-none inline-flex items-center justify-center px-3 py-2 text-sm font-medium rounded-full bg-primary-100 text-primary-700 hover:bg-primary-200 dark:bg-primary-900/30 dark:text-primary-400 dark:hover:bg-primary-900/50 transition-colors relative"
+          >
+            <ChatBubbleLeftRightIcon className="h-5 w-5 mr-1.5" />
+            Discuss
+            {unreadMessages && (
+              <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full animate-pulse" />
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Topics = () => {
   const { user, partner, isOnline } = useAuth();
   const [newTopic, setNewTopic] = useState('');
@@ -422,235 +528,98 @@ const Topics = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-16 pb-20 sm:pb-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Topics</h1>
-            <p className="mt-2 text-lg text-gray-600 dark:text-gray-400">
-              Discuss and decide on important matters together
-            </p>
-          </div>
+    <div className="min-h-screen h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+      {/* Fixed Header Section */}
+      <div className="flex-none px-4 pt-4 pb-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        {/* Header */}
+        <div className="mb-3">
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Topics</h1>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Discuss and decide on important matters together
+          </p>
         </div>
 
-        <div className="mb-6">
-          {/* Desktop Categories */}
-          <div className="hidden sm:flex flex-wrap gap-2">
+        {/* Categories */}
+        <div className="-mx-4 px-4">
+          <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide">
             {Object.entries(CATEGORY_ICONS).map(([category, Icon]) => (
               <button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
-                className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 ${
-                  selectedCategory === category
+                className={`
+                  flex-none inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap
+                  ${selectedCategory === category
                     ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-400'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
-                }`}
+                    : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                  }
+                `}
               >
-                <Icon className="h-5 w-5 mr-1.5" />
+                <Icon className="h-4 w-4 mr-1.5" />
                 {category}
               </button>
             ))}
           </div>
-
-          {/* Mobile Categories Horizontal Scroll */}
-          <div className="sm:hidden overflow-x-auto pb-2 -mx-4 px-4">
-            <div className="flex gap-2 min-w-max">
-              {Object.entries(CATEGORY_ICONS).map(([category, Icon]) => (
-                <button
-                  key={category}
-                  onClick={() => setSelectedCategory(category)}
-                  className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors duration-200 whitespace-nowrap ${
-                    selectedCategory === category
-                      ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-400'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  <Icon className="h-4 w-4 mr-1" />
-                  {category}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
-        <form onSubmit={handleAddTopic} className="mb-8">
-          <div className="flex flex-col gap-4">
-            <div className="flex gap-4">
-              <input
-                type="text"
-                value={newTopic}
-                onChange={(e) => setNewTopic(e.target.value)}
-                placeholder="Enter a new topic..."
-                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-              />
-              <button
-                type="submit"
-                disabled={!isOnline}
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-primary-500 dark:hover:bg-primary-600"
-              >
-                <PlusIcon className="h-5 w-5 mr-1.5" />
-                Add Topic
-              </button>
-            </div>
-            {formError && (
-              <div className="text-sm text-red-600 dark:text-red-400">
-                {formError}
-              </div>
-            )}
+        {/* Add Topic Form */}
+        <form onSubmit={handleAddTopic} className="mt-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={newTopic}
+              onChange={(e) => setNewTopic(e.target.value)}
+              placeholder="Enter a new topic..."
+              className="flex-1 h-10 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            />
+            <button
+              type="submit"
+              className="h-10 px-4 inline-flex items-center justify-center border border-transparent rounded-lg text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:focus:ring-offset-gray-900"
+            >
+              <PlusIcon className="h-5 w-5" />
+              <span className="sr-only">Add Topic</span>
+            </button>
           </div>
+          {formError && (
+            <p className="mt-2 text-sm text-red-600 dark:text-red-400">{formError}</p>
+          )}
         </form>
+      </div>
 
-        <div className="space-y-4">
+      {/* Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-4 py-2 space-y-3">
           {loading ? (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 dark:border-primary-400 mx-auto"></div>
-              <p className="mt-4 text-gray-600 dark:text-gray-400">Loading topics...</p>
+            <div className="flex items-center justify-center py-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-600 border-t-transparent"></div>
             </div>
-          ) : error ? (
-            <div className="text-center py-8">
-              <p className="text-red-600 dark:text-red-400">{error}</p>
-            </div>
-          ) : filteredTopics.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-gray-600 dark:text-gray-400">
-                {topics.length === 0 ? "No topics yet. Add one to get started!" : "No topics found in this category."}
-              </p>
+          ) : topics.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+              <ChatBubbleLeftRightIcon className="h-12 w-12 text-gray-400 dark:text-gray-600 mb-2" />
+              <p className="text-gray-500 dark:text-gray-400">No topics yet. Add one to get started!</p>
             </div>
           ) : (
-            filteredTopics.map((topic) => (
-              <div
-                key={topic.id}
-                className={`bg-white dark:bg-gray-800 rounded-lg shadow p-6 transition-all duration-200 ${
-                  selectedTopic?.id === topic.id ? 'ring-2 ring-primary-500' : ''
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">{topic.question}</h3>
-                    <div className="mt-1 flex items-center space-x-4">
-                      <span className="text-sm text-gray-500 dark:text-gray-400">
-                        Created {formatDate(topic.createdAt)}
-                      </span>
-                      {topic.category && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
-                          {topic.category}
-                        </span>
-                      )}
-                    </div>
-                    {/* Response Status Section */}
-                    <div className="mt-2">
-                      {topic.responses?.[user.uid]?.response && !topic.responses?.[partner.uid]?.response && (
-                        <p className="text-sm text-yellow-600 dark:text-yellow-400 flex items-center">
-                          <span className="inline-block w-2 h-2 bg-yellow-400 rounded-full mr-2 animate-pulse"></span>
-                          Waiting for partner's response...
-                        </p>
-                      )}
-                      {topic.responses?.[partner.uid]?.response && !topic.responses?.[user.uid]?.response && (
-                        <p className="text-sm text-blue-600 dark:text-blue-400">
-                          Partner has responded - your turn!
-                        </p>
-                      )}
-                      {topic.responses?.[user.uid]?.response && topic.responses?.[partner.uid]?.response && (
-                        <div className="mt-2 space-y-1">
-                          <div className="flex items-center space-x-2">
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Your response:</span>
-                            <span className={`text-sm flex items-center ${
-                              topic.responses[user.uid].response === 'agree' 
-                                ? 'text-green-600 dark:text-green-400' 
-                                : 'text-red-600 dark:text-red-400'
-                            }`}>
-                              {topic.responses[user.uid].response === 'agree' ? (
-                                <HandThumbUpIcon className="h-4 w-4 mr-1" />
-                              ) : (
-                                <HandThumbDownIcon className="h-4 w-4 mr-1" />
-                              )}
-                              {topic.responses[user.uid].response === 'agree' ? 'Agree' : 'Disagree'}
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Partner's response:</span>
-                            <span className={`text-sm flex items-center ${
-                              topic.responses[partner.uid].response === 'agree' 
-                                ? 'text-green-600 dark:text-green-400' 
-                                : 'text-red-600 dark:text-red-400'
-                            }`}>
-                              {topic.responses[partner.uid].response === 'agree' ? (
-                                <HandThumbUpIcon className="h-4 w-4 mr-1" />
-                              ) : (
-                                <HandThumbDownIcon className="h-4 w-4 mr-1" />
-                              )}
-                              {topic.responses[partner.uid].response === 'agree' ? 'Agree' : 'Disagree'}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-4">
-                    {/* Decision Buttons */}
-                    {!topic.responses?.[user.uid]?.response && (
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => handleResponse(topic.id, 'agree')}
-                          className="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/50 dark:text-green-400 dark:hover:bg-green-900/70 transition-colors"
-                        >
-                          <HandThumbUpIcon className="h-5 w-5 mr-1" />
-                          Agree
-                        </button>
-                        <button
-                          onClick={() => handleResponse(topic.id, 'disagree')}
-                          className="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-400 dark:hover:bg-red-900/70 transition-colors"
-                        >
-                          <HandThumbDownIcon className="h-5 w-5 mr-1" />
-                          Disagree
-                        </button>
-                      </div>
-                    )}
-                    {/* Response Indicator */}
-                    <div className="flex items-center space-x-2">
-                      {topic.responses?.[user.uid]?.response === 'agree' && (
-                        <HandThumbUpIcon className="h-5 w-5 text-green-500" />
-                      )}
-                      {topic.responses?.[user.uid]?.response === 'disagree' && (
-                        <HandThumbDownIcon className="h-5 w-5 text-red-500" />
-                      )}
-                    </div>
-                    {/* Chat Button */}
-                    <button
-                      onClick={() => handleTopicView(topic)}
-                      className={`inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium ${
-                        selectedTopic?.id === topic.id
-                          ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-400'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      <ChatBubbleLeftRightIcon className="h-5 w-5 mr-1" />
-                      Discuss
-                      {unreadMessagesByTopic[topic.id] && (
-                        <span className="ml-1.5 flex h-2 w-2 rounded-full bg-red-500"></span>
-                      )}
-                    </button>
-                  </div>
-                </div>
-                {selectedTopic?.id === topic.id && (
-                  <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-medium text-gray-900 dark:text-white">Discussion</h3>
-                      <button
-                        onClick={handleCloseChat}
-                        className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
-                      >
-                        <XMarkIcon className="h-5 w-5" />
-                      </button>
-                    </div>
-                    <TopicChat topic={topic} onClose={handleCloseChat} />
-                  </div>
-                )}
-              </div>
-            ))
+            topics
+              .filter(topic => selectedCategory === 'All' || topic.category === selectedCategory)
+              .map(topic => (
+                <TopicCard
+                  key={topic.id}
+                  topic={topic}
+                  onRespond={handleResponse}
+                  onDiscuss={handleTopicView}
+                  unreadMessages={unreadMessagesByTopic[topic.id]}
+                />
+              ))
           )}
         </div>
       </div>
+
+      {/* Chat Modal */}
+      {selectedTopic && (
+        <TopicChat
+          topic={selectedTopic}
+          onClose={handleCloseChat}
+        />
+      )}
     </div>
   );
 };

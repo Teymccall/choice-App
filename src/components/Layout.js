@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
 import Navigation from './Navigation';
+import FloatingNav from './FloatingNav';
 import { useAuth } from '../context/AuthContext';
 import { useLocation } from 'react-router-dom';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, get } from 'firebase/database';
 import { rtdb } from '../firebase/config';
 
 const Layout = ({ children }) => {
@@ -16,17 +17,48 @@ const Layout = ({ children }) => {
 
   // Initialize theme
   useEffect(() => {
-    if (!user?.uid) {
-      // If no user, check localStorage or use system preference
-      const storedTheme = localStorage.getItem('theme');
-      if (storedTheme) {
-        document.documentElement.classList.toggle('dark', storedTheme === 'dark');
-      } else {
-        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        document.documentElement.classList.toggle('dark', isDark);
+    // Initialize theme from Firebase or localStorage
+    const initializeTheme = async () => {
+      if (!user?.uid) {
+        // If no user, check localStorage or use system preference
+        const storedTheme = localStorage.getItem('theme');
+        if (storedTheme) {
+          document.documentElement.classList.toggle('dark', storedTheme === 'dark');
+        } else {
+          const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.classList.toggle('dark', isDark);
+        }
+        return;
       }
-      return;
-    }
+
+      // Get theme from Firebase
+      const themeRef = ref(rtdb, `userSettings/${user.uid}/theme`);
+      const snapshot = await get(themeRef);
+      const data = snapshot.val();
+      
+      if (data?.preference) {
+        if (data.preference === 'system') {
+          const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.classList.toggle('dark', isDark);
+          localStorage.removeItem('theme');
+        } else {
+          document.documentElement.classList.toggle('dark', data.preference === 'dark');
+          localStorage.setItem('theme', data.preference);
+        }
+      } else {
+        // If no Firebase preference, check localStorage
+        const storedTheme = localStorage.getItem('theme');
+        if (storedTheme) {
+          document.documentElement.classList.toggle('dark', storedTheme === 'dark');
+        } else {
+          // Default to system preference
+          const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.classList.toggle('dark', isDark);
+        }
+      }
+    };
+
+    initializeTheme();
 
     // Listen for theme changes in Firebase
     const themeRef = ref(rtdb, `userSettings/${user.uid}/theme`);
@@ -56,20 +88,30 @@ const Layout = ({ children }) => {
     mediaQuery.addEventListener('change', handleSystemThemeChange);
     
     return () => {
-      unsubscribe();
+      if (unsubscribe) unsubscribe();
       mediaQuery.removeEventListener('change', handleSystemThemeChange);
     };
   }, [user?.uid]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200">
-      {showNav && <Navigation />}
-      <main className={`${showNav ? 'pb-16 sm:pb-0' : ''} ${
-        isHomePage 
-          ? 'bg-gradient-to-b from-primary-50 to-primary-100 dark:from-primary-900/20 dark:to-primary-900/40' 
-          : ''
-      }`}>
-        {children}
+    <div className="h-screen overflow-hidden bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200">
+      {showNav && (
+        <>
+          <Navigation />
+          <FloatingNav />
+        </>
+      )}
+      <main 
+        className={`
+          ${showNav ? 'pt-16 pb-20' : ''} 
+          ${isHomePage ? 'bg-gradient-to-b from-primary-50 to-primary-100 dark:from-primary-900/20 dark:to-primary-900/40' : ''}
+          h-[calc(100vh-4rem)] sm:h-auto sm:min-h-[calc(100vh-4rem)]
+          overflow-y-auto sm:overflow-y-visible
+        `}
+      >
+        <div className="px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto h-full">
+          {children}
+        </div>
       </main>
     </div>
   );

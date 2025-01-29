@@ -466,45 +466,6 @@ const Navigation = () => {
         </div>
       </div>
 
-      {/* Mobile Navigation */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-        <div className="grid grid-cols-4 gap-1 px-2 py-2">
-          {navItems.map(({ path, name, icon: Icon, badge }) => (
-            <Link
-              key={path}
-              to={path}
-              className={`flex flex-col items-center py-2 px-1 text-xs font-medium relative ${
-                location.pathname === path
-                  ? 'text-primary-600 dark:text-primary-400'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400'
-              }`}
-            >
-              <Icon className="h-6 w-6 mb-1" />
-              {name}
-              {badge && (
-                <div className="absolute -top-1 right-1/4 flex space-x-1">
-                  {badge.messages && (
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-xs text-white">
-                      {unreadChats}
-                    </span>
-                  )}
-                  {badge.responses && (
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-yellow-500 text-xs text-white">
-                      {pendingResponses}
-                    </span>
-                  )}
-                  {badge.topics && (
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-xs text-white">
-                      {newTopics}
-                    </span>
-                  )}
-                </div>
-              )}
-            </Link>
-          ))}
-        </div>
-      </div>
-
       {/* Mobile Notifications Dropdown */}
       {showNotifications && (
         <div className="sm:hidden fixed top-16 left-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden z-50">
