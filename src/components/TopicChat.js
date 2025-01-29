@@ -935,12 +935,40 @@ const TopicChat = ({ topic, onClose }) => {
     };
   }, [isRecording]);
 
+  // Add this useEffect for keyboard handling
+  useEffect(() => {
+    const handleResize = () => {
+      // Only update if we're on mobile
+      if (window.innerWidth <= 768) {
+        // Get actual viewport height
+        const vh = window.innerHeight;
+        document.documentElement.style.setProperty('--chat-height', `${vh}px`);
+      }
+    };
+
+    // Initial setup
+    handleResize();
+
+    // Add event listeners
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('focusin', (e) => {
+      if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+        // When keyboard opens, use window.innerHeight
+        document.documentElement.style.setProperty('--chat-height', `${window.innerHeight}px`);
+      }
+    });
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
   if (loading) {
     return <div className="text-center py-4">Loading messages...</div>;
   }
 
   return (
-    <div className="fixed inset-0 bg-[#efeae2] dark:bg-[#0c1317] z-50 flex flex-col max-h-[100vh] h-[100dvh]">
+    <div className="fixed inset-0 bg-[#efeae2] dark:bg-[#0c1317] z-50 flex flex-col h-[var(--chat-height)] max-h-[100%]">
       {/* Header - make it more compact on mobile */}
       <div className="flex-none px-3 py-2 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db] dark:border-[#2f3b44]">
         <div className="flex items-center justify-between">
@@ -970,7 +998,7 @@ const TopicChat = ({ topic, onClose }) => {
       </div>
 
       {/* Messages - adjust padding and spacing */}
-      <div className="flex-1 overflow-y-auto px-[3%] py-2 space-y-1">
+      <div className="flex-1 overflow-y-auto min-h-0 px-[3%] py-2 space-y-1">
         {messages.map((message) => (
           <Message
             key={message.id}
@@ -1198,7 +1226,19 @@ const TopicChat = ({ topic, onClose }) => {
         />
       )}
 
+      {/* Add styles for mobile keyboard handling */}
       <style jsx global>{`
+        @media (max-width: 768px) {
+          body.keyboard-open {
+            height: var(--chat-height);
+            overflow: hidden;
+          }
+          
+          textarea {
+            font-size: 16px !important; /* Prevent iOS zoom */
+          }
+        }
+        
         .audio-player {
           --webkit-appearance: none;
           background: transparent;
