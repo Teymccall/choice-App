@@ -19,62 +19,59 @@ const Layout = ({ children }) => {
   useEffect(() => {
     // Initialize theme from Firebase or localStorage
     const initializeTheme = async () => {
-      if (!user?.uid) {
-        // If no user, check localStorage or use system preference
-        const storedTheme = localStorage.getItem('theme');
-        if (storedTheme) {
-          document.documentElement.classList.toggle('dark', storedTheme === 'dark');
-        } else {
-          const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          document.documentElement.classList.toggle('dark', isDark);
-        }
-        return;
+      // First check localStorage or system preference regardless of user state
+      const storedTheme = localStorage.getItem('theme');
+      if (storedTheme) {
+        document.documentElement.classList.toggle('dark', storedTheme === 'dark');
+      } else {
+        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.classList.toggle('dark', isDark);
       }
 
-      // Get theme from Firebase
-      const themeRef = ref(rtdb, `userSettings/${user.uid}/theme`);
-      const snapshot = await get(themeRef);
-      const data = snapshot.val();
-      
-      if (data?.preference) {
-        if (data.preference === 'system') {
-          const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          document.documentElement.classList.toggle('dark', isDark);
-          localStorage.removeItem('theme');
-        } else {
-          document.documentElement.classList.toggle('dark', data.preference === 'dark');
-          localStorage.setItem('theme', data.preference);
+      // If no user, don't proceed with Firebase operations
+      if (!user?.uid) return;
+
+      try {
+        // Get theme from Firebase
+        const themeRef = ref(rtdb, `userSettings/${user.uid}/theme`);
+        const snapshot = await get(themeRef);
+        const data = snapshot.val();
+        
+        if (data?.preference) {
+          if (data.preference === 'system') {
+            const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.classList.toggle('dark', isDark);
+            localStorage.removeItem('theme');
+          } else {
+            document.documentElement.classList.toggle('dark', data.preference === 'dark');
+            localStorage.setItem('theme', data.preference);
+          }
         }
-      } else {
-        // If no Firebase preference, check localStorage
-        const storedTheme = localStorage.getItem('theme');
-        if (storedTheme) {
-          document.documentElement.classList.toggle('dark', storedTheme === 'dark');
-        } else {
-          // Default to system preference
-          const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          document.documentElement.classList.toggle('dark', isDark);
-        }
+      } catch (error) {
+        console.error('Error fetching theme from Firebase:', error);
       }
     };
 
     initializeTheme();
 
-    // Listen for theme changes in Firebase
-    const themeRef = ref(rtdb, `userSettings/${user.uid}/theme`);
-    const unsubscribe = onValue(themeRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data?.preference) {
-        if (data.preference === 'system') {
-          const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          document.documentElement.classList.toggle('dark', isDark);
-          localStorage.removeItem('theme');
-        } else {
-          document.documentElement.classList.toggle('dark', data.preference === 'dark');
-          localStorage.setItem('theme', data.preference);
+    // Only set up Firebase listener if user exists
+    let unsubscribe;
+    if (user?.uid) {
+      const themeRef = ref(rtdb, `userSettings/${user.uid}/theme`);
+      unsubscribe = onValue(themeRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data?.preference) {
+          if (data.preference === 'system') {
+            const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.classList.toggle('dark', isDark);
+            localStorage.removeItem('theme');
+          } else {
+            document.documentElement.classList.toggle('dark', data.preference === 'dark');
+            localStorage.setItem('theme', data.preference);
+          }
         }
-      }
-    });
+      });
+    }
 
     // Listen for system theme changes
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');

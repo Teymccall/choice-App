@@ -79,6 +79,39 @@ export const AuthProvider = ({ children }) => {
   const auth = getAuth();
   const googleProvider = new GoogleAuthProvider();
 
+  // Handle authentication errors
+  const handleAuthError = (error) => {
+    setError(null);
+    switch (error.code) {
+      case 'auth/user-not-found':
+        setError('No account found with this email address');
+        break;
+      case 'auth/wrong-password':
+        setError('Incorrect password');
+        break;
+      case 'auth/invalid-email':
+        setError('Invalid email address');
+        break;
+      case 'auth/email-already-in-use':
+        setError('An account already exists with this email address');
+        break;
+      case 'auth/weak-password':
+        setError('Password should be at least 6 characters');
+        break;
+      case 'auth/network-request-failed':
+        setError('Network error. Please check your internet connection');
+        break;
+      case 'auth/too-many-requests':
+        setError('Too many attempts. Please try again later');
+        break;
+      case 'auth/popup-closed-by-user':
+        setError('Sign-in cancelled. Please try again');
+        break;
+      default:
+        setError(error.message || 'An error occurred during authentication');
+    }
+  };
+
   // Monitor online status and manage Firestore network state
   useEffect(() => {
     const handleOnline = () => {
@@ -229,85 +262,99 @@ export const AuthProvider = ({ children }) => {
     return () => off(userStatusRef);
   }, [user?.uid]);
 
-  const signup = async (email, password, displayName) => {
+  // Initialize user data after sign up or sign in
+  const initializeUserData = async (user) => {
+    if (!user) return;
+    
     try {
-      if (!isOnline) {
-        throw new Error('You are currently offline. Please check your internet connection.');
-      }
-      
-      setError(null);
-      const { user } = await createUserWithEmailAndPassword(auth, email, password);
-      
-      // Send verification email
-      await user.sendEmailVerification({
-        url: window.location.origin + '/login',
-        handleCodeInApp: true,
-      });
-      
-      // Update user profile
-      await updateProfile(user, { displayName });
-      
-      // Create user document in Firestore
-      const userData = {
-        uid: user.uid,
-        email,
-        displayName,
-        createdAt: Timestamp.now(),
-        emailVerified: false,
-        lastLogin: Timestamp.now()
+      // Clear any existing notifications for new users
+      const notificationsRef = ref(rtdb, `notifications/${user.uid}`);
+      await set(notificationsRef, null);
+
+      // Clear any existing connections
+      const connectionsRef = ref(rtdb, `connections/${user.uid}`);
+      await set(connectionsRef, null);
+
+      // Initialize user settings with defaults
+      const userSettingsRef = ref(rtdb, `userSettings/${user.uid}`);
+      const defaultSettings = {
+        notifications: {
+          newTopics: true,
+          partnerResponses: true,
+          suggestions: true,
+        },
+        theme: {
+          preference: 'system'
+        },
+        privacy: {
+          showProfile: true,
+          anonymousNotes: false
+        }
       };
 
-      await setDoc(doc(db, 'users', user.uid), userData);
-      
-      // Sign out user until they verify their email
-      await signOut(auth);
+      // Only set if not exists
+      const snapshot = await get(userSettingsRef);
+      if (!snapshot.exists()) {
+        await set(userSettingsRef, defaultSettings);
+      }
 
-      throw new Error(
-        'Please check your email to verify your account before signing in. ' +
-        'The verification link has been sent to your email address.'
-      );
-    } catch (err) {
-      setError(err.message);
-      throw err;
+      // Clear partner state
+      setPartner(null);
+      setDisconnectMessage(null);
+    } catch (error) {
+      console.error('Error initializing user data:', error);
     }
   };
 
-  const login = async (email, password) => {
+  const signIn = async (email, password) => {
     try {
-      if (!isOnline) {
-        throw new Error('You are currently offline. Please check your internet connection.');
-      }
-      
       setError(null);
-      const { user } = await signInWithEmailAndPassword(auth, email, password);
-      
-      // Check if email is verified
-      if (!user.emailVerified) {
-        // Send another verification email if needed
-        await user.sendEmailVerification({
-          url: window.location.origin + '/login',
-          handleCodeInApp: true,
-        });
-        await signOut(auth);
-        throw new Error(
-          'Please verify your email address before signing in. ' +
-          'A new verification link has been sent to your email.'
-        );
-      }
-      
-      // Update last login time
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        lastLogin: Timestamp.now(),
-        emailVerified: true
-      });
-      
-      return user;
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      await initializeUserData(userCredential.user);
+      return userCredential;
     } catch (err) {
-      setError(err.message);
+      handleAuthError(err);
       throw err;
     }
   };
+
+  const signUp = async (email, password, displayName) => {
+    try {
+      setError(null);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Set display name
+      await updateProfile(userCredential.user, { displayName });
+      
+      // Initialize user data
+      await initializeUserData(userCredential.user);
+      
+      return userCredential;
+    } catch (err) {
+      handleAuthError(err);
+      throw err;
+    }
+  };
+
+  // Update auth state change handler
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setUser(user);
+      setIsLoading(false);
+      
+      if (user) {
+        // Initialize data for new sign in
+        await initializeUserData(user);
+      } else {
+        // Clear states when user signs out
+        setPartner(null);
+        setDisconnectMessage(null);
+        setActiveInviteCode(null);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   const logout = async () => {
     try {
@@ -424,84 +471,90 @@ export const AuthProvider = ({ children }) => {
     const connectionsRef = ref(rtdb, `connections`);
     const unsubscribe = onValue(connectionsRef, async (snapshot) => {
       const connections = snapshot.val();
-      if (!connections) {
-        setPartner(null);
-        return;
-      }
-
-      const myConnection = connections[user.uid];
-      if (!myConnection || myConnection.status === 'disconnected') {
-        setPartner(null);
-        return;
-      }
-
-      const partnerId = myConnection.partnerId;
-      if (!partnerId) {
-        setPartner(null);
-        return;
-      }
-
-      const partnerConnection = connections[partnerId];
-      if (!partnerConnection || partnerConnection.status === 'disconnected') {
-        setPartner(null);
-        return;
-      }
-
+      
       try {
-        // Fetch latest partner data from Firestore
+        // Get the latest user data from Firestore to check partnerId
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        const userData = userDoc.data();
+        const partnerId = userData?.partnerId;
+
+        // If user has no partner in Firestore, clear partner state
+        if (!partnerId) {
+          setPartner(null);
+          return;
+        }
+
+        // Check connection status
+        const myConnection = connections?.[user.uid];
+        const partnerConnection = connections?.[partnerId];
+
+        // Only show disconnection if both Firestore and RTDB indicate no connection
+        if (!myConnection || !partnerConnection || 
+            myConnection.status === 'disconnected' || 
+            partnerConnection.status === 'disconnected') {
+          
+          // Double check Firestore partner status before showing disconnect
+          const partnerDoc = await getDoc(doc(db, 'users', partnerId));
+          if (!partnerDoc.exists() || partnerDoc.data().partnerId !== user.uid) {
+            setPartner(null);
+            setDisconnectMessage('Your partner has disconnected');
+            
+            // Clean up the connection in Firestore
+            const batch = writeBatch(db);
+            batch.update(doc(db, 'users', user.uid), { partnerId: null });
+            if (partnerDoc.exists()) {
+              batch.update(doc(db, 'users', partnerId), { partnerId: null });
+            }
+            await batch.commit();
+            
+            // Clean up RTDB connections
+            await set(ref(rtdb, `connections/${user.uid}`), null);
+            await set(ref(rtdb, `connections/${partnerId}`), null);
+          }
+          return;
+        }
+
+        // If we reach here, the connection is valid
+        // Fetch and set partner data
         const partnerDoc = await getDoc(doc(db, 'users', partnerId));
         if (partnerDoc.exists()) {
           const partnerData = partnerDoc.data();
-          // Only set partner if they're still connected to us
           if (partnerData.partnerId === user.uid) {
             setPartner(partnerData);
-          } else {
-            setPartner(null);
+            setDisconnectMessage(null);
           }
         }
       } catch (err) {
-        console.error('Error fetching partner data:', err);
+        console.error('Error handling connection status:', err);
       }
     });
 
     return () => unsubscribe();
   }, [user?.uid]);
 
-  // Handle disconnection
+  // Handle disconnection cleanup
   useEffect(() => {
     if (!user?.uid || !partner?.uid) return;
 
-    const myConnectionRef = ref(rtdb, `connections/${user.uid}`);
-    const partnerConnectionRef = ref(rtdb, `connections/${partner.uid}`);
-
-    const unsubscribe = onValue(partnerConnectionRef, (snapshot) => {
-      const connection = snapshot.val();
-      if (!connection || connection.status === 'disconnected') {
-        setPartner(null);
-        setDisconnectMessage('Your partner has disconnected');
+    const cleanup = async () => {
+      try {
+        const myConnectionRef = ref(rtdb, `connections/${user.uid}`);
+        await set(myConnectionRef, {
+          partnerId: partner.uid,
+          status: 'disconnected',
+          lastUpdated: serverTimestamp()
+        });
+      } catch (err) {
+        console.error('Error cleaning up connection:', err);
       }
-    });
-
-    // Set up disconnect cleanup using the correct RTDB method
-    const onDisconnectHandler = () => {
-      set(myConnectionRef, {
-        partnerId: partner.uid,
-        status: 'disconnected',
-        lastUpdated: serverTimestamp()
-      });
     };
 
-    // Add disconnect handler
-    window.addEventListener('beforeunload', onDisconnectHandler);
+    // Set up disconnect cleanup
+    window.addEventListener('beforeunload', cleanup);
 
     return () => {
-      unsubscribe();
-      window.removeEventListener('beforeunload', onDisconnectHandler);
-      set(myConnectionRef, {
-        partnerId: partner.uid,
-        status: 'disconnected',
-        lastUpdated: serverTimestamp()
-      });
+      window.removeEventListener('beforeunload', cleanup);
+      cleanup();
     };
   }, [user?.uid, partner?.uid]);
 
@@ -660,9 +713,9 @@ export const AuthProvider = ({ children }) => {
     partner,
     activeInviteCode,
     setActiveInviteCode,
-    login,
+    login: signIn,
     logout,
-    signup,
+    signup: signUp,
     connectPartner,
     generateInviteCode,
     disconnectPartner,

@@ -195,27 +195,7 @@ const Settings = () => {
       const data = snapshot.val();
       if (data?.preference) {
         setTheme(data.preference);
-        
-        if (data.preference === 'system') {
-          const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          document.documentElement.classList.toggle('dark', isDark);
-          localStorage.removeItem('theme');
-        } else {
-          document.documentElement.classList.toggle('dark', data.preference === 'dark');
-          localStorage.setItem('theme', data.preference);
-        }
-      } else {
-        // If no Firebase preference, check localStorage
-        const storedTheme = localStorage.getItem('theme');
-        if (storedTheme) {
-          setTheme(storedTheme);
-          document.documentElement.classList.toggle('dark', storedTheme === 'dark');
-        } else {
-          // Default to system preference
-          setTheme('system');
-          const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          document.documentElement.classList.toggle('dark', isDark);
-        }
+        setIsDarkMode(data.preference === 'dark');
       }
     });
 
@@ -235,11 +215,8 @@ const Settings = () => {
           setNotifications(data.notifications);
         }
         // Update dark mode state
-        if (data.theme?.isDark !== undefined) {
-          setIsDarkMode(data.theme.isDark);
-          // Apply theme
-          document.documentElement.classList.toggle('dark', data.theme.isDark);
-          localStorage.setItem('theme', data.theme.isDark ? 'dark' : 'light');
+        if (data.theme?.preference) {
+          setIsDarkMode(data.theme.preference === 'dark');
         }
         // Update profile if exists
         if (data.profile) {
@@ -253,21 +230,6 @@ const Settings = () => {
 
     return () => unsubscribe();
   }, [user?.uid, isOnline]);
-
-  // Fetch theme preference from Firebase
-  useEffect(() => {
-    if (!user?.uid) return;
-
-    const themeRef = ref(rtdb, `userSettings/${user.uid}/theme`);
-    const unsubscribe = onValue(themeRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data?.preference) {
-        setIsDarkMode(data.preference === 'dark');
-      }
-    });
-
-    return () => unsubscribe();
-  }, [user?.uid]);
 
   // Handle dark mode changes
   const handleDarkModeChange = async () => {
@@ -420,7 +382,11 @@ const Settings = () => {
           suggestions: true,
         },
         theme: {
-          isDark: window.matchMedia('(prefers-color-scheme: dark)').matches
+          preference: 'system'
+        },
+        privacy: {
+          showProfile: true,
+          anonymousNotes: false
         }
       };
       
@@ -430,11 +396,12 @@ const Settings = () => {
       
       // Update local state
       setNotifications(defaultSettings.notifications);
-      setIsDarkMode(defaultSettings.theme.isDark);
+      setTheme('system');
       
-      // Apply theme
-      document.documentElement.classList.toggle('dark', defaultSettings.theme.isDark);
-      localStorage.setItem('theme', defaultSettings.theme.isDark ? 'dark' : 'light');
+      // Apply system theme
+      const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.classList.toggle('dark', systemDark);
+      localStorage.removeItem('theme'); // Remove any stored theme preference
       
       setSuccessMessage('Settings reset to defaults');
     } catch (err) {
