@@ -549,12 +549,31 @@ const TopicChat = ({ topic, onClose }) => {
   }, [topic?.id, partner?.uid, user?.uid]);
 
   useEffect(() => {
-    if (!user?.uid || !topic?.id) return;
+    if (!user?.uid || !topic?.id) {
+      console.log('Cannot setup typing listener:', {
+        hasUser: !!user?.uid,
+        hasTopicId: !!topic?.id,
+        partnerId: partner?.uid
+      });
+      return;
+    }
 
     const typingRef = ref(rtdb, `typing/${topic.id}`);
+    console.log('Setting up typing listener for topic:', {
+      topicId: topic.id,
+      path: `typing/${topic.id}`,
+      partnerId: partner?.uid
+    });
     
     const unsubscribe = onValue(typingRef, (snapshot) => {
       const data = snapshot.val();
+      console.log('Typing status changed:', {
+        data,
+        partnerId: partner?.uid,
+        partnerTyping: data?.[partner?.uid]?.isTyping,
+        rawData: JSON.stringify(data)
+      });
+      
       if (data && data[partner?.uid]) {
         setPartnerTyping(data[partner.uid].isTyping);
       } else {
@@ -563,22 +582,53 @@ const TopicChat = ({ topic, onClose }) => {
     });
 
     return () => {
+      console.log('Cleaning up typing listener');
       unsubscribe();
       if (user?.uid) {
         update(ref(rtdb, `typing/${topic.id}/${user.uid}`), {
           isTyping: false,
           timestamp: serverTimestamp()
+        }).then(() => {
+          console.log('Successfully cleared typing status on cleanup');
+        }).catch((error) => {
+          console.error('Error clearing typing status:', error);
         });
       }
     };
   }, [user?.uid, topic?.id, partner?.uid]);
 
   const updateTypingStatus = (typing) => {
-    if (!user?.uid || !topic?.id || !isOnline) return;
+    console.log('Attempting to update typing status:', {
+      typing,
+      hasUser: !!user?.uid,
+      hasTopicId: !!topic?.id,
+      isOnline,
+      partnerId: partner?.uid
+    });
+
+    if (!user?.uid || !topic?.id || !isOnline) {
+      console.log('Cannot update typing status:', { 
+        hasUser: !!user?.uid, 
+        hasTopicId: !!topic?.id, 
+        isOnline 
+      });
+      return;
+    }
+
+    console.log('Updating typing status:', {
+      typing,
+      userId: user.uid,
+      topicId: topic.id,
+      path: `typing/${topic.id}/${user.uid}`
+    });
 
     update(ref(rtdb, `typing/${topic.id}/${user.uid}`), {
       isTyping: typing,
       timestamp: serverTimestamp()
+    }).then(() => {
+      console.log('Successfully updated typing status');
+    }).catch((error) => {
+      console.error('Error updating typing status:', error);
     });
   };
 
@@ -597,9 +647,11 @@ const TopicChat = ({ topic, onClose }) => {
       clearTimeout(typingTimeoutRef.current);
     }
 
+    console.log('Message changed, setting typing status to true');
     updateTypingStatus(true);
 
     typingTimeoutRef.current = setTimeout(() => {
+      console.log('Typing timeout, setting typing status to false');
       updateTypingStatus(false);
     }, 2000);
   };
@@ -727,7 +779,7 @@ const TopicChat = ({ topic, onClose }) => {
     }
 
     const messageText = newMessage.trim();
-    if (!messageText) return;
+    if (!messageText && !selectedFile) return;
 
     if (editingMessage) {
       await handleEditMessage(editingMessage.id, messageText);
@@ -762,7 +814,7 @@ const TopicChat = ({ topic, onClose }) => {
 
       const chatRef = ref(rtdb, `topicChats/${topic.id}`);
       const messageData = {
-        text: messageText,
+        text: messageText || '',
         userId: user.uid,
         partnerId: partner.uid,
         userName: user.displayName || 'User',
@@ -1175,7 +1227,7 @@ const TopicChat = ({ topic, onClose }) => {
                   cancelEditing();
                 }
               }}
-              placeholder={editingMessage ? "Edit message..." : "Type a message"}
+              placeholder={selectedFile ? "Add a caption..." : editingMessage ? "Edit message..." : "Type a message"}
               className="flex-1 max-h-[100px] min-h-[42px] px-2 py-2 bg-transparent border-none focus:ring-0 text-[15px] placeholder-[#3b4a54] dark:placeholder-[#8696a0] resize-none"
               style={{ height: '42px' }}
             />
@@ -1187,7 +1239,7 @@ const TopicChat = ({ topic, onClose }) => {
                 onTouchStart={startRecording}
                 onTouchEnd={stopRecording}
                 className="p-1 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                disabled={uploadingMedia}
+                disabled={uploadingMedia || selectedFile}
               >
                 <MicrophoneIcon className={`h-6 w-6 ${isRecording ? 'text-red-500' : ''}`} />
               </button>
@@ -1196,9 +1248,9 @@ const TopicChat = ({ topic, onClose }) => {
           {!isRecording && (
             <button
               onClick={handleSendMessage}
-              disabled={!newMessage.trim() && !selectedFile}
+              disabled={(!newMessage.trim() && !selectedFile) || uploadingMedia}
               className={`p-2 rounded-full flex-none ${
-                (!newMessage.trim() && !selectedFile)
+                (!newMessage.trim() && !selectedFile) || uploadingMedia
                   ? 'text-[#8696a0] dark:text-[#8696a0]'
                   : 'text-white bg-[#00a884] hover:bg-[#06cf9c] dark:bg-[#00a884] dark:hover:bg-[#06cf9c]'
               }`}
@@ -1215,57 +1267,33 @@ const TopicChat = ({ topic, onClose }) => {
 
       {/* Media Preview */}
       {selectedFile && (
-        <div className="absolute bottom-full left-0 right-0 bg-white dark:bg-[#233138] shadow-lg overflow-hidden z-[55] mb-2">
-          <div className="relative">
-            {previewUrl && selectedFile.type.startsWith('image/') && (
-              <div className="relative w-full h-[250px] bg-black/5 dark:bg-white/5">
-                <img 
-                  src={previewUrl} 
-                  alt="Preview" 
-                  className="w-full h-full object-contain"
-                  onLoad={(e) => {
-                    e.target.style.opacity = 1;
-                    window.dispatchEvent(new Event('resize'));
-                  }}
-                  style={{ opacity: 0, transition: 'opacity 0.2s ease-in-out' }}
-                  loading="eager"
-                  decoding="sync"
-                />
+        <div className="fixed inset-x-0 bottom-[60px] bg-white dark:bg-[#233138] shadow-lg overflow-hidden z-[55] border-t border-gray-200 dark:border-gray-700">
+          <div className="p-3 flex items-center justify-between">
+            <div className="flex items-center space-x-3 min-w-0 flex-1">
+              <div className="flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                <PhotoIcon className="h-6 w-6 text-gray-400 dark:text-gray-500" />
               </div>
-            )}
-            <div className="p-3 flex items-center justify-between border-t border-gray-200 dark:border-gray-700">
-              <div className="flex items-center space-x-3 min-w-0 flex-1">
-                <div className="flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
-                  {previewUrl && selectedFile.type.startsWith('image/') && (
-                    <img 
-                      src={previewUrl} 
-                      alt="Thumbnail" 
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                    {selectedFile.name}
-                  </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
-                  </p>
-                </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                  {selectedFile.name}
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                </p>
               </div>
-              <button
-                onClick={() => {
-                  setSelectedFile(null);
-                  setPreviewUrl(null);
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = '';
-                  }
-                }}
-                className="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                <XCircleIcon className="h-6 w-6" />
-              </button>
             </div>
+            <button
+              onClick={() => {
+                setSelectedFile(null);
+                setPreviewUrl(null);
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = '';
+                }
+              }}
+              className="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              <XCircleIcon className="h-6 w-6" />
+            </button>
           </div>
         </div>
       )}

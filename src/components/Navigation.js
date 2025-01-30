@@ -153,21 +153,31 @@ const Navigation = () => {
         return;
       }
 
-      // Sort notifications by timestamp, newest first
+      // Get last checked timestamp
+      const lastChecked = parseInt(localStorage.getItem(`lastChecked_notifications_${user.uid}`)) || 0;
+
+      // Filter notifications to only show unread ones
       const notificationsList = Object.entries(data)
         .map(([id, notification]) => ({
           id,
           ...notification,
           timestamp: parseInt(notification.timestamp) // Ensure timestamp is a number
         }))
+        .filter(notification => notification.timestamp > lastChecked)
         .sort((a, b) => b.timestamp - a.timestamp);
 
-      console.log('Current notifications:', notificationsList); // Debug log
       setNotifications(notificationsList);
     });
 
     return () => unsubscribe();
   }, [user?.uid]);
+
+  // Add effect to clear notification badge when viewing notifications
+  useEffect(() => {
+    if (showNotifications && user?.uid) {
+      localStorage.setItem(`lastChecked_notifications_${user.uid}`, Date.now().toString());
+    }
+  }, [showNotifications, user?.uid]);
 
   useEffect(() => {
     if (!user?.uid || !partner?.uid) return;
@@ -245,8 +255,23 @@ const Navigation = () => {
 
   const handleClearNotification = async (notificationId) => {
     if (!user?.uid) return;
-    const notificationRef = ref(rtdb, `notifications/${user.uid}/${notificationId}`);
-    await remove(notificationRef);
+    try {
+      const notificationRef = ref(rtdb, `notifications/${user.uid}/${notificationId}`);
+      await remove(notificationRef);
+    } catch (error) {
+      console.error('Error clearing notification:', error);
+    }
+  };
+
+  const handleClearAllNotifications = async () => {
+    if (!user?.uid) return;
+    try {
+      const notificationsRef = ref(rtdb, `notifications/${user.uid}`);
+      await remove(notificationsRef);
+      setShowNotifications(false);
+    } catch (error) {
+      console.error('Error clearing all notifications:', error);
+    }
   };
 
   // Render notification dropdown
@@ -369,11 +394,7 @@ const Navigation = () => {
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Notifications</h3>
                       {notifications.length > 0 && (
                         <button
-                          onClick={async () => {
-                            if (!user?.uid) return;
-                            const notificationsRef = ref(rtdb, `notifications/${user.uid}`);
-                            await remove(notificationsRef);
-                          }}
+                          onClick={handleClearAllNotifications}
                           className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium"
                         >
                           Clear All
@@ -395,7 +416,10 @@ const Navigation = () => {
                                 </p>
                               </div>
                               <button
-                                onClick={() => handleClearNotification(notification.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleClearNotification(notification.id);
+                                }}
                                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                               >
                                 <span className="sr-only">Dismiss</span>
@@ -473,11 +497,7 @@ const Navigation = () => {
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Notifications</h3>
             {notifications.length > 0 && (
               <button
-                onClick={async () => {
-                  if (!user?.uid) return;
-                  const notificationsRef = ref(rtdb, `notifications/${user.uid}`);
-                  await remove(notificationsRef);
-                }}
+                onClick={handleClearAllNotifications}
                 className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium"
               >
                 Clear All

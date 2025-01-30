@@ -50,6 +50,25 @@ const FloatingNav = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Clear badges when navigating to topics page
+  useEffect(() => {
+    if (location.pathname === '/topics' && user?.uid) {
+      // Clear new topics badge
+      localStorage.setItem(`lastChecked_topics_${user.uid}`, Date.now().toString());
+      setNewTopics(0);
+      
+      // Clear unread chats if a topic is open
+      const openTopicId = sessionStorage.getItem('openTopicChatId');
+      if (openTopicId) {
+        localStorage.setItem(`lastRead_${openTopicId}_${user.uid}`, Date.now().toString());
+        setUnreadChats(0);
+      }
+      
+      // Clear pending responses
+      setPendingResponses(0);
+    }
+  }, [location.pathname, user?.uid]);
+
   // Track notifications and unread messages
   useEffect(() => {
     if (!user?.uid || !partner?.uid) return;
@@ -64,14 +83,14 @@ const FloatingNav = () => {
         return;
       }
 
-      // Check for new topics
-      const lastCheckedTopics = parseInt(localStorage.getItem(`lastChecked_topics_${user.uid}`)) || 0;
-      const newTopicsCount = Object.values(data).filter(topic => 
-        topic.createdAt > lastCheckedTopics && topic.createdBy !== user.uid
-      ).length;
+      // Check for new topics only if not on topics page
+      const newTopicsCount = location.pathname !== '/topics' ? Object.values(data).filter(topic => {
+        const lastCheckedTopics = parseInt(localStorage.getItem(`lastChecked_topics_${user.uid}`)) || 0;
+        return topic.createdAt > lastCheckedTopics && topic.createdBy !== user.uid;
+      }).length : 0;
       setNewTopics(newTopicsCount);
 
-      // Check for new responses
+      // Check for new responses only if not on topics page
       const responsesCount = location.pathname !== '/topics' ? Object.values(data).filter(topic => {
         if (!topic.responses || !topic.responses[partner.uid]) return false;
         const lastChecked = parseInt(localStorage.getItem(`lastChecked_${topic.id}_${user.uid}`)) || 0;
@@ -94,6 +113,12 @@ const FloatingNav = () => {
     const unsubscribe = onValue(chatsRef, (snapshot) => {
       const data = snapshot.val();
       if (!data) {
+        setUnreadChats(0);
+        return;
+      }
+
+      // Only count unread messages if not on topics page
+      if (location.pathname === '/topics') {
         setUnreadChats(0);
         return;
       }
@@ -122,7 +147,7 @@ const FloatingNav = () => {
     });
 
     return () => unsubscribe();
-  }, [user?.uid]);
+  }, [user?.uid, location.pathname]);
 
   if (!user) return null;
 

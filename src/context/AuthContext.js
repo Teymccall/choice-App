@@ -26,6 +26,7 @@ import {
   enableNetwork,
   disableNetwork,
   waitForPendingWrites,
+  onSnapshot
 } from 'firebase/firestore';
 import { 
   ref, 
@@ -297,6 +298,38 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
+  // Add this effect to listen for partner updates
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    // Listen for changes to the user's document
+    const userRef = doc(db, 'users', user.uid);
+    const unsubscribe = onSnapshot(userRef, async (snapshot) => {
+      if (snapshot.exists()) {
+        const userData = snapshot.data();
+        
+        // If there's a partner ID, fetch partner data
+        if (userData.partnerId) {
+          const partnerRef = doc(db, 'users', userData.partnerId);
+          const partnerDoc = await getDoc(partnerRef);
+          if (partnerDoc.exists()) {
+            setPartner(partnerDoc.data());
+          }
+        } else {
+          setPartner(null);
+        }
+
+        // Update user state with latest data
+        setUser(currentUser => ({
+          ...currentUser,
+          ...userData
+        }));
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user?.uid]);
+
   // Initialize user data after sign up or sign in
   const initializeUserData = async (user) => {
     if (!user) return;
@@ -346,6 +379,45 @@ export const AuthProvider = ({ children }) => {
       setError(null);
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       await initializeUserData(userCredential.user);
+      
+      // Show welcome alert after successful login
+      const welcomeMessage = `
+        <div class="space-y-2">
+          <p class="font-medium">🎉 Welcome to Choice!</p>
+          <p>This app is currently in development. Some features you should know about:</p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li>Real-time chat and responses</li>
+            <li>Image and media sharing</li>
+            <li>Topic discussions with your partner</li>
+          </ul>
+          <p class="mt-2 text-sm">We're constantly improving the app. Thank you for being an early user!</p>
+        </div>
+      `;
+
+      // Create and show the alert
+      const alertDiv = document.createElement('div');
+      alertDiv.className = 'fixed inset-0 flex items-center justify-center z-[100] bg-black/50';
+      alertDiv.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 transform transition-all">
+          <div class="p-6">
+            ${welcomeMessage}
+            <button class="mt-4 w-full bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors">
+              Got it!
+            </button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(alertDiv);
+
+      // Remove alert when clicked
+      alertDiv.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON' || e.target === alertDiv) {
+          alertDiv.classList.add('opacity-0');
+          setTimeout(() => alertDiv.remove(), 150);
+        }
+      });
+
       return userCredential;
     } catch (err) {
       handleAuthError(err);
@@ -453,6 +525,24 @@ export const AuthProvider = ({ children }) => {
 
         await batch.commit();
 
+        // Clear existing notifications for both users
+        const userNotificationsRef = ref(rtdb, `notifications/${user.uid}`);
+        const partnerNotificationsRef = ref(rtdb, `notifications/${partnerId}`);
+        
+        await Promise.all([
+          set(userNotificationsRef, null),
+          set(partnerNotificationsRef, null)
+        ]);
+
+        // Clear any existing topic data
+        const userTopicsRef = ref(rtdb, `userTopics/${user.uid}`);
+        const partnerTopicsRef = ref(rtdb, `userTopics/${partnerId}`);
+        
+        await Promise.all([
+          set(userTopicsRef, null),
+          set(partnerTopicsRef, null)
+        ]);
+
         // After successful connection, get fresh partner data and update state
         const freshPartnerDoc = await getDoc(partnerRef);
         if (freshPartnerDoc.exists()) {
@@ -472,11 +562,13 @@ export const AuthProvider = ({ children }) => {
       await Promise.all([
         set(userConnectionRef, {
           partnerId: partnerId,
-          lastActive: rtdbTimestamp()
+          lastActive: rtdbTimestamp(),
+          status: 'online'
         }),
         set(partnerConnectionRef, {
           partnerId: user.uid,
-          lastActive: rtdbTimestamp()
+          lastActive: rtdbTimestamp(),
+          status: 'online'
         })
       ]);
 
@@ -548,34 +640,21 @@ export const AuthProvider = ({ children }) => {
         throw new Error('You are not currently connected with a partner.');
       }
 
-      // First clean up RTDB connections and cancel onDisconnect operations
+      // First clean up RTDB connection and cancel onDisconnect operation
       const userConnectionRef = ref(rtdb, `connections/${user.uid}`);
-      const partnerConnectionRef = ref(rtdb, `connections/${partner.uid}`);
       
       await Promise.all([
         onDisconnect(userConnectionRef).cancel(),
-        onDisconnect(partnerConnectionRef).cancel(),
-        remove(userConnectionRef),
-        remove(partnerConnectionRef)
+        remove(userConnectionRef)
       ]);
 
-      // Use safeWrite for the batch operation
+      // Use safeWrite for updating only the user's document
       await safeWrite(async () => {
-        const batch = writeBatch(db);
-        
         const userRef = doc(db, 'users', user.uid);
-        batch.update(userRef, {
+        await updateDoc(userRef, {
           partnerId: null,
           inviteCodes: []
         });
-
-        const partnerRef = doc(db, 'users', partner.uid);
-        batch.update(partnerRef, {
-          partnerId: null,
-          inviteCodes: []
-        });
-        
-        return batch.commit();
       });
 
       // Finally update local state
@@ -614,6 +693,42 @@ export const AuthProvider = ({ children }) => {
         };
         
         await setDoc(userRef, userData);
+
+        // Show welcome alert for new users
+        const welcomeMessage = `
+          <div class="space-y-2">
+            <p class="font-medium">👋 Welcome to Choice!</p>
+            <p>Thanks for joining! Here's what you can do:</p>
+            <ul class="list-disc pl-5 space-y-1">
+              <li>Connect with your partner using invite codes</li>
+              <li>Create and discuss topics together</li>
+              <li>Share media and chat in real-time</li>
+            </ul>
+            <p class="mt-2 text-sm">The app is in development, and we're adding new features regularly!</p>
+          </div>
+        `;
+
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'fixed inset-0 flex items-center justify-center z-[100] bg-black/50';
+        alertDiv.innerHTML = `
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 transform transition-all">
+            <div class="p-6">
+              ${welcomeMessage}
+              <button class="mt-4 w-full bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors">
+                Let's get started!
+              </button>
+            </div>
+          </div>
+        `;
+
+        document.body.appendChild(alertDiv);
+
+        alertDiv.addEventListener('click', (e) => {
+          if (e.target.tagName === 'BUTTON' || e.target === alertDiv) {
+            alertDiv.classList.add('opacity-0');
+            setTimeout(() => alertDiv.remove(), 150);
+          }
+        });
       } else {
         // Update last login time
         await updateDoc(userRef, {

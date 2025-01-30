@@ -48,6 +48,14 @@ const Notifications = () => {
     return () => unsubscribe();
   }, [user?.uid]);
 
+  // Add new effect to clear notifications when panel is opened
+  useEffect(() => {
+    if (showNotifications && user?.uid) {
+      // Mark all notifications as read in local storage
+      localStorage.setItem(`lastChecked_notifications_${user.uid}`, Date.now().toString());
+    }
+  }, [showNotifications, user?.uid]);
+
   const handleDismiss = async (notificationId) => {
     if (!user?.uid) return;
     
@@ -56,6 +64,18 @@ const Notifications = () => {
       await remove(notificationRef);
     } catch (error) {
       console.error('Error dismissing notification:', error);
+    }
+  };
+
+  // Add function to clear all notifications
+  const handleClearAll = async () => {
+    if (!user?.uid) return;
+    try {
+      const notificationsRef = ref(rtdb, `notifications/${user.uid}`);
+      await remove(notificationsRef);
+      setShowNotifications(false);
+    } catch (error) {
+      console.error('Error clearing notifications:', error);
     }
   };
 
@@ -159,11 +179,7 @@ const Notifications = () => {
             <h3 className="text-lg font-medium text-gray-900">Notifications</h3>
             {notifications.length > 0 && (
               <button
-                onClick={async () => {
-                  if (!user?.uid) return;
-                  const notificationsRef = ref(rtdb, `notifications/${user.uid}`);
-                  await remove(notificationsRef);
-                }}
+                onClick={handleClearAll}
                 className="text-sm text-red-600 hover:text-red-800 font-medium"
               >
                 Clear All
