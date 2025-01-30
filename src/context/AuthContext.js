@@ -457,7 +457,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Update the connect function to use safeWrite
   const connectPartner = async (inviteCode) => {
     try {
       if (!isOnline) {
@@ -472,105 +471,82 @@ export const AuthProvider = ({ children }) => {
         throw new Error('You are already connected with a partner. Please disconnect first.');
       }
 
-      // Get all users and filter manually since we can't do complex array queries
+      // Get all users to find the matching invite code
       const usersRef = collection(db, 'users');
       const querySnapshot = await getDocs(usersRef);
-      const now = Timestamp.now();
       
-      // Find user with matching invite code
-      let validPartnerDoc = null;
+      let partnerDoc = null;
       querySnapshot.forEach(doc => {
         const userData = doc.data();
-        const matchingCode = userData.inviteCodes?.find(code => 
-          code.code === inviteCode.toUpperCase() && 
-          !code.used && 
-          code.expiresAt?.toMillis() > now.toMillis()
-        );
-        
-        if (matchingCode) {
-          validPartnerDoc = doc;
+        if (userData.inviteCodes && Array.isArray(userData.inviteCodes)) {
+          const matchingCode = userData.inviteCodes.find(code => 
+            code.code === inviteCode.toUpperCase() && 
+            !code.used && 
+            code.expiresAt.toDate() > new Date()
+          );
+          if (matchingCode) {
+            partnerDoc = doc;
+          }
         }
       });
 
-      if (!validPartnerDoc) {
+      if (!partnerDoc) {
         throw new Error('Invalid or expired invite code. Please try again with a valid code.');
       }
 
-      const partnerId = validPartnerDoc.id;
-      
+      const partnerId = partnerDoc.id;
       if (partnerId === user.uid) {
         throw new Error('You cannot connect with yourself.');
       }
 
-      // Use safeWrite for the batch operation
-      await safeWrite(async () => {
-        const batch = writeBatch(db);
-        const partnerData = validPartnerDoc.data();
-        const matchingCode = partnerData.inviteCodes.find(code => 
-          code.code === inviteCode.toUpperCase()
-        );
-        
-        // Update partner's document
-        const partnerRef = doc(db, 'users', partnerId);
-        batch.update(partnerRef, {
-          partnerId: user.uid,
-          inviteCodes: arrayRemove(matchingCode)
-        });
+      // Use a batch write to update both users atomically
+      const batch = writeBatch(db);
 
-        // Update current user's document
-        const userRef = doc(db, 'users', user.uid);
-        batch.update(userRef, {
-          partnerId: partnerId
-        });
-
-        await batch.commit();
-
-        // Clear existing notifications for both users
-        const userNotificationsRef = ref(rtdb, `notifications/${user.uid}`);
-        const partnerNotificationsRef = ref(rtdb, `notifications/${partnerId}`);
-        
-        await Promise.all([
-          set(userNotificationsRef, null),
-          set(partnerNotificationsRef, null)
-        ]);
-
-        // Clear any existing topic data
-        const userTopicsRef = ref(rtdb, `userTopics/${user.uid}`);
-        const partnerTopicsRef = ref(rtdb, `userTopics/${partnerId}`);
-        
-        await Promise.all([
-          set(userTopicsRef, null),
-          set(partnerTopicsRef, null)
-        ]);
-
-        // After successful connection, get fresh partner data and update state
-        const freshPartnerDoc = await getDoc(partnerRef);
-        if (freshPartnerDoc.exists()) {
-          setPartner(freshPartnerDoc.data());
-        }
+      // Update current user's document
+      const userRef = doc(db, 'users', user.uid);
+      batch.update(userRef, {
+        partnerId: partnerId,
+        partnerDisplayName: partnerDoc.data().displayName
       });
 
-      // Update RTDB connection status with onDisconnect handler
+      // Update partner's document
+      const partnerRef = doc(db, 'users', partnerId);
+      const partnerData = partnerDoc.data();
+      const updatedInviteCodes = partnerData.inviteCodes.map(code => 
+        code.code === inviteCode.toUpperCase() 
+          ? { ...code, used: true, usedBy: user.uid, usedAt: Timestamp.now() }
+          : code
+      );
+
+      batch.update(partnerRef, {
+        inviteCodes: updatedInviteCodes,
+        partnerId: user.uid,
+        partnerDisplayName: user.displayName
+      });
+
+      // Commit the batch
+      await batch.commit();
+
+      // Update RTDB connection status for both users
       const userConnectionRef = ref(rtdb, `connections/${user.uid}`);
+      await set(userConnectionRef, {
+        partnerId: partnerId,
+        lastActive: rtdbTimestamp(),
+        status: 'online'
+      });
+
       const partnerConnectionRef = ref(rtdb, `connections/${partnerId}`);
+      await set(partnerConnectionRef, {
+        partnerId: user.uid,
+        lastActive: rtdbTimestamp(),
+        status: 'online'
+      });
 
-      // Set up disconnect handlers for both users
-      await onDisconnect(userConnectionRef).remove();
-      await onDisconnect(partnerConnectionRef).remove();
-
-      // Set current connection status
-      await Promise.all([
-        set(userConnectionRef, {
-          partnerId: partnerId,
-          lastActive: rtdbTimestamp(),
-          status: 'online'
-        }),
-        set(partnerConnectionRef, {
-          partnerId: user.uid,
-          lastActive: rtdbTimestamp(),
-          status: 'online'
-        })
-      ]);
+      // Get fresh partner data and update state
+      const freshPartnerDoc = await getDoc(doc(db, 'users', partnerId));
+      if (freshPartnerDoc.exists()) {
+        setPartner(freshPartnerDoc.data());
+      }
 
       return partnerId;
     } catch (err) {
@@ -595,30 +571,27 @@ export const AuthProvider = ({ children }) => {
       }
 
       const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const expiresAt = Timestamp.fromDate(new Date(Date.now() + 5 * 60 * 1000));
-      const createdAt = Timestamp.now();
+      const expiresAt = Timestamp.fromDate(new Date(Date.now() + (5 * 60 * 1000))); // 5 minutes
 
+      // Store the invite code in Firestore
+      const userRef = doc(db, 'users', user.uid);
       const inviteCode = {
         code,
-        createdAt,
+        createdBy: user.uid,
+        createdAt: Timestamp.now(),
         expiresAt,
         used: false
       };
-
-      const userRef = doc(db, 'users', user.uid);
       
-      await safeWrite(async () => {
-      const userDoc = await getDoc(userRef);
-        if (!userDoc.exists()) {
-          throw new Error('User document not found');
-        }
-
-        await updateDoc(userRef, {
-          inviteCodes: arrayUnion(inviteCode)
-        });
+      await updateDoc(userRef, {
+        inviteCodes: arrayUnion(inviteCode)
       });
 
-      setActiveInviteCode(inviteCode);
+      // Set activeInviteCode with the Timestamp object directly
+      setActiveInviteCode({
+        code,
+        expiresAt // Keep as Timestamp object
+      });
       setError(null);
       
       return inviteCode;
@@ -629,7 +602,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Update the disconnect function to use safeWrite
   const disconnectPartner = async () => {
     try {
       if (!user) {
@@ -640,20 +612,15 @@ export const AuthProvider = ({ children }) => {
         throw new Error('You are not currently connected with a partner.');
       }
 
-      // First clean up RTDB connection and cancel onDisconnect operation
+      // First clean up RTDB connection
       const userConnectionRef = ref(rtdb, `connections/${user.uid}`);
-      
-      await Promise.all([
-        onDisconnect(userConnectionRef).cancel(),
-        remove(userConnectionRef)
-      ]);
+      await remove(userConnectionRef);
 
       // Use safeWrite for updating only the user's document
       await safeWrite(async () => {
         const userRef = doc(db, 'users', user.uid);
         await updateDoc(userRef, {
-          partnerId: null,
-          inviteCodes: []
+          partnerId: null
         });
       });
 

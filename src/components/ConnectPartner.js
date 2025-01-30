@@ -42,7 +42,9 @@ const ConnectPartner = () => {
 
     const updateTimeLeft = () => {
       const now = Date.now();
-      const expiresAt = activeInviteCode.expiresAt.toMillis();
+      const expiresAt = activeInviteCode.expiresAt instanceof Date 
+        ? activeInviteCode.expiresAt.getTime()
+        : activeInviteCode.expiresAt.toMillis();
       const remaining = Math.max(0, Math.floor((expiresAt - now) / 1000));
       setTimeLeft(remaining);
 

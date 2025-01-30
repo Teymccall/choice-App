@@ -201,8 +201,8 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
       );
     }
 
-    return (
-      <div 
+  return (
+    <div 
         className="rounded-lg overflow-hidden cursor-pointer -mx-[9px] -mt-[6px] relative bg-black/5 dark:bg-white/5"
         onClick={() => onImageClick(message.media.url)}
       >
@@ -225,21 +225,21 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
     if (!message.replyTo) return null;
     
     return (
-      <div 
-        className={`
+          <div 
+            className={`
           text-[12.8px] mb-0.5 px-3 py-[4px] cursor-pointer flex items-start space-x-2
-          ${isOwnMessage 
-            ? 'bg-[#0b846d]/[0.08] text-[#0b846d]' 
-            : 'bg-[#667781]/[0.08] text-[#667781]'
-          }
-          rounded-[7px] rounded-bl-none w-full hover:opacity-80 transition-opacity
-        `}
-        onClick={handleReplyClick}
-      >
+              ${isOwnMessage 
+                ? 'bg-[#0b846d]/[0.08] text-[#0b846d]' 
+                : 'bg-[#667781]/[0.08] text-[#667781]'
+              }
+              rounded-[7px] rounded-bl-none w-full hover:opacity-80 transition-opacity
+            `}
+            onClick={handleReplyClick}
+          >
         <div className="flex-1 min-w-0">
           <span className="font-medium block">
-            {message.replyTo.userId === user.uid ? 'You' : 'Partner'}
-          </span>
+              {message.replyTo.userId === user.uid ? 'You' : 'Partner'}
+            </span>
           {message.replyTo.media ? (
             <div className="flex items-center space-x-2">
               <PhotoIcon className="h-4 w-4 flex-shrink-0" />
@@ -276,32 +276,32 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
         >
           {renderReplyContent()}
 
-          <div className={`
-            relative group
+        <div className={`
+          relative group
             ${message.media && !isDeleted ? 'rounded-lg overflow-hidden' : 'rounded-[7px]'}
-            ${isOwnMessage 
+          ${isOwnMessage 
               ? isDeleted ? 'bg-[#f0f0f0] dark:bg-[#1f2937]/50' : 'bg-[#e7ffdb] dark:bg-[#005c4b]'
               : isDeleted ? 'bg-[#f0f0f0] dark:bg-[#1f2937]/50' : 'bg-white dark:bg-[#202c33]'
-            }
+          }
             ${message.media && !isDeleted ? '' : isOwnMessage ? 'rounded-tr-[4px]' : 'rounded-tl-[4px]'}
-            shadow-sm
-          `}>
-            {/* Message tail */}
-            <div className={`
-              absolute top-0 w-3 h-3 overflow-hidden
-              ${isOwnMessage ? '-right-[10px]' : '-left-[10px]'}
+          shadow-sm
+        `}>
+          {/* Message tail */}
+          <div className={`
+            absolute top-0 w-3 h-3 overflow-hidden
+            ${isOwnMessage ? '-right-[10px]' : '-left-[10px]'}
               ${isDeleted ? 'hidden' : ''}
-            `}>
-              <div className={`
-                w-4 h-4 transform rotate-45 origin-top-left
-                ${isOwnMessage 
-                  ? 'bg-[#e7ffdb] dark:bg-[#005c4b] -translate-x-1/2' 
-                  : 'bg-white dark:bg-[#202c33] translate-x-1/2'
-                }
-              `}/>
-            </div>
+          `}>
+            <div className={`
+              w-4 h-4 transform rotate-45 origin-top-left
+              ${isOwnMessage 
+                ? 'bg-[#e7ffdb] dark:bg-[#005c4b] -translate-x-1/2' 
+                : 'bg-white dark:bg-[#202c33] translate-x-1/2'
+              }
+            `}/>
+          </div>
 
-            <div className="px-[9px] py-[6px] min-w-[85px]">
+          <div className="px-[9px] py-[6px] min-w-[85px]">
               {isDeleted ? (
                 <div className="flex items-center space-x-2">
                   <span className="text-[14.2px] text-gray-500 dark:text-gray-400 italic">
@@ -310,12 +310,12 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
                   <span className="text-[11px] text-gray-500 dark:text-gray-400 leading-none">
                     {timeString}
                   </span>
-                </div>
+              </div>
               ) : (
                 <>
                   {message.media && renderMediaContent()}
-                  {message.text && (
-                    <div className="flex flex-col">
+            {message.text && (
+              <div className="flex flex-col">
                       {showEditInput ? (
                         <div className="flex items-center space-x-2">
                           <textarea
@@ -346,33 +346,33 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
                           </button>
                         </div>
                       ) : (
-                        <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] ${
-                          isOwnMessage 
-                            ? 'text-[#111b21] dark:text-[#e9edef]' 
-                            : 'text-[#111b21] dark:text-[#e9edef]'
-                        }`}>
-                          {message.text}
+                <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] ${
+                  isOwnMessage 
+                    ? 'text-[#111b21] dark:text-[#e9edef]' 
+                    : 'text-[#111b21] dark:text-[#e9edef]'
+                }`}>
+                  {message.text}
                           {message.edited && (
                             <span className="text-[11px] text-[#667781] dark:text-[#8696a0] ml-1">
                               (edited)
                             </span>
                           )}
-                        </p>
+                </p>
                       )}
-                      <div className="flex justify-end items-center mt-1 space-x-1">
-                        <span className="text-[11px] text-[#667781] dark:text-[#8696a0] leading-none">
-                          {timeString}
-                        </span>
-                        {renderReadReceipt()}
-                      </div>
-                    </div>
+                <div className="flex justify-end items-center mt-1 space-x-1">
+                  <span className="text-[11px] text-[#667781] dark:text-[#8696a0] leading-none">
+                    {timeString}
+                  </span>
+                  {renderReadReceipt()}
+                </div>
+              </div>
                   )}
                 </>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </div>
+    </div>
 
       {/* Delete/Edit Modal */}
       {showDeleteModal && !isDeleted && (
@@ -485,7 +485,7 @@ const TopicChat = ({ topic, onClose }) => {
     // not just during component cleanup on refresh
     return () => {
       if (!window.performance.getEntriesByType('navigation').some(entry => entry.type === 'reload')) {
-        sessionStorage.removeItem('openTopicChatId');
+      sessionStorage.removeItem('openTopicChatId');
       }
     };
   }, [topic?.id, user?.uid]);
@@ -733,7 +733,7 @@ const TopicChat = ({ topic, onClose }) => {
 
     try {
       setError(null);
-      
+
       // Create preview URL first, before validation or upload
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -777,7 +777,7 @@ const TopicChat = ({ topic, onClose }) => {
     if (e) {
       e.preventDefault();
     }
-
+    
     const messageText = newMessage.trim();
     if (!messageText && !selectedFile) return;
 
@@ -844,8 +844,8 @@ const TopicChat = ({ topic, onClose }) => {
 
       // Clear media states
       if (selectedFile) {
-        setSelectedFile(null);
-        setPreviewUrl(null);
+      setSelectedFile(null);
+      setPreviewUrl(null);
         setUploadingMedia(false);
       }
     } catch (error) {
@@ -973,7 +973,7 @@ const TopicChat = ({ topic, onClose }) => {
         } finally {
           setUploadingMedia(false);
           // Clean up
-          stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach(track => track.stop());
           setIsRecording(false);
           setRecordingDuration(0);
           clearInterval(recordingTimerRef.current);
@@ -1097,36 +1097,36 @@ const TopicChat = ({ topic, onClose }) => {
             </div>
           </div>
         </div>
-      </div>
+        </div>
 
       {/* Messages - adjust padding and spacing */}
       <div className="flex-1 overflow-y-auto min-h-0 px-[3%] py-2 space-y-1">
-        {messages.map((message) => (
-          <Message
-            key={message.id}
-            message={message}
-            isOwnMessage={message.userId === user.uid}
-            user={user}
-            onReply={handleReply}
-            onImageClick={setViewingImage}
-            messageRefs={messageRefs}
+          {messages.map((message) => (
+            <Message
+              key={message.id}
+              message={message}
+              isOwnMessage={message.userId === user.uid}
+              user={user}
+              onReply={handleReply}
+              onImageClick={setViewingImage}
+              messageRefs={messageRefs}
             onDelete={handleDeleteMessage}
             onEdit={handleEditMessage}
             onStartEdit={startEditing}
-          />
-        ))}
-        {partnerTyping && (
-          <div className="flex items-center space-x-2 text-[#667781] dark:text-[#8696a0] animate-fade-in">
-            <span className="text-sm">Partner is typing</span>
-            <div className="flex space-x-1">
-              <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-              <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '200ms' }}></span>
-              <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '400ms' }}></span>
+            />
+          ))}
+          {partnerTyping && (
+            <div className="flex items-center space-x-2 text-[#667781] dark:text-[#8696a0] animate-fade-in">
+              <span className="text-sm">Partner is typing</span>
+              <div className="flex space-x-1">
+                <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '200ms' }}></span>
+                <span className="w-1.5 h-1.5 bg-[#667781] dark:bg-[#8696a0] rounded-full animate-bounce" style={{ animationDelay: '400ms' }}></span>
+              </div>
             </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
 
       {/* Input area - optimize for mobile */}
       <div className="flex-none bg-[#f0f2f5] dark:bg-[#202c33] px-2 py-2 relative">
@@ -1143,25 +1143,25 @@ const TopicChat = ({ topic, onClose }) => {
         )}
         {replyingTo && !editingMessage && (
           <div className="flex items-center justify-between bg-[#fff] dark:bg-[#2a3942] px-3 py-2 -mb-1 mx-1 rounded-t-lg">
-            <div className="flex items-start space-x-2 min-w-0 flex-1">
-              <div className="w-0.5 h-full bg-[#00a884] self-stretch flex-none"/>
-              <div className="flex flex-col min-w-0 py-0.5">
+              <div className="flex items-start space-x-2 min-w-0 flex-1">
+                <div className="w-0.5 h-full bg-[#00a884] self-stretch flex-none"/>
+                <div className="flex flex-col min-w-0 py-0.5">
                 <span className="text-[#00a884] dark:text-[#00a884] text-[12px] font-medium">
-                  {replyingTo.userId === user.uid ? 'You' : 'Partner'}
-                </span>
+                    {replyingTo.userId === user.uid ? 'You' : 'Partner'}
+                  </span>
                 <span className="text-[#667781] dark:text-[#8696a0] text-[12px] truncate">
-                  {replyingTo.text || 'Media message'}
-                </span>
+                    {replyingTo.text || 'Media message'}
+                  </span>
+                </div>
               </div>
+              <button 
+                onClick={() => setReplyingTo(null)} 
+                className="p-1 -mr-1 text-[#667781] dark:text-[#8696a0] hover:text-[#3b4a54] dark:hover:text-[#e9edef] flex-none"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
             </div>
-            <button 
-              onClick={() => setReplyingTo(null)} 
-              className="p-1 -mr-1 text-[#667781] dark:text-[#8696a0] hover:text-[#3b4a54] dark:hover:text-[#e9edef] flex-none"
-            >
-              <XMarkIcon className="h-5 w-5" />
-            </button>
-          </div>
-        )}
+          )}
         <div className="flex items-end space-x-2">
           <div className="flex-1 bg-white dark:bg-[#2a3942] rounded-lg flex items-end">
             {/* Media button */}
@@ -1174,45 +1174,45 @@ const TopicChat = ({ topic, onClose }) => {
                 disabled={uploadingMedia}
               >
                 {uploadingMedia ? (
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#00a884]"></div>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#00a884]"></div>
                 ) : (
                   <PhotoIcon className="h-6 w-6" />
                 )}
               </button>
-            </div>
+          </div>
 
-            {/* Media menu */}
-            {showMediaMenu && (
-              <div 
-                ref={mediaMenuRef}
+          {/* Media menu */}
+          {showMediaMenu && (
+            <div 
+              ref={mediaMenuRef}
                 className="absolute bottom-16 left-2 w-[186px] bg-white dark:bg-[#233138] rounded-lg shadow-lg overflow-hidden z-50"
-              >
-                <div className="py-[6px]">
-                  <label
-                    className="flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] cursor-pointer transition-colors"
-                    onClick={() => {
-                      fileInputRef.current?.click();
-                      setShowMediaMenu(false);
-                    }}
-                  >
-                    <PhotoIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
-                    <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Photos & Videos</span>
-                  </label>
+            >
+              <div className="py-[6px]">
+                <label
+                  className="flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] cursor-pointer transition-colors"
+                  onClick={() => {
+                    fileInputRef.current?.click();
+                    setShowMediaMenu(false);
+                  }}
+                >
+                  <PhotoIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
+                  <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Photos & Videos</span>
+                </label>
 
-                  <button
-                    onClick={() => {
-                      handleCameraClick();
-                      setShowMediaMenu(false);
-                    }}
-                    className="w-full flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] transition-colors"
-                    disabled={uploadingMedia}
-                  >
-                    <CameraIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
-                    <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Camera</span>
-                  </button>
-                </div>
+                <button
+                  onClick={() => {
+                    handleCameraClick();
+                    setShowMediaMenu(false);
+                  }}
+                  className="w-full flex items-center space-x-4 px-6 py-[13px] hover:bg-[#f0f2f5] dark:hover:bg-[#182229] transition-colors"
+                  disabled={uploadingMedia}
+                >
+                  <CameraIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1]" />
+                  <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Camera</span>
+                </button>
               </div>
-            )}
+            </div>
+          )}
 
             <textarea
               ref={inputRef}
@@ -1275,35 +1275,35 @@ const TopicChat = ({ topic, onClose }) => {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                  {selectedFile.name}
+                    {selectedFile.name}
                 </p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
                 </p>
               </div>
-            </div>
-            <button
-              onClick={() => {
-                setSelectedFile(null);
-                setPreviewUrl(null);
-                if (fileInputRef.current) {
-                  fileInputRef.current.value = '';
-                }
-              }}
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedFile(null);
+                    setPreviewUrl(null);
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = '';
+                    }
+                  }}
               className="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
+                >
               <XCircleIcon className="h-6 w-6" />
-            </button>
-          </div>
-        </div>
-      )}
+                </button>
+              </div>
+            </div>
+          )}
 
-      {/* Error Message */}
-      {error && (
-        <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-200 p-2 sm:p-3 rounded-lg shadow-lg">
-          {error}
-        </div>
-      )}
+          {/* Error Message */}
+          {error && (
+            <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-200 p-2 sm:p-3 rounded-lg shadow-lg">
+              {error}
+            </div>
+          )}
 
       {/* Hidden file inputs */}
       <input
