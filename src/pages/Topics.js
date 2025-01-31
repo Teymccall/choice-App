@@ -13,7 +13,7 @@ import {
   XMarkIcon,
   HashtagIcon,
 } from '@heroicons/react/24/outline';
-import { ref, onValue, push, update, serverTimestamp, get } from 'firebase/database';
+import { ref, onValue, push, update, serverTimestamp, get, set } from 'firebase/database';
 import { rtdb } from '../firebase/config';
 import TopicChat from '../components/TopicChat';
 
@@ -41,14 +41,14 @@ const TopicCard = ({ topic, onRespond, onDiscuss, unreadMessages }) => {
   const partnerName = partner?.displayName || 'Your partner';
   
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
       <div className="p-4">
         <div className="flex flex-col space-y-2">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+          <h3 className="text-lg font-medium text-[#111b21]">
             {topic.question}
           </h3>
           <div className="flex items-center justify-between text-sm">
-            <div className="flex items-center text-gray-500 dark:text-gray-400">
+            <div className="flex items-center text-[#667781]">
               <span>{formattedDate}</span>
               <span className="mx-2">•</span>
               <span>{topic.category || 'Custom'}</span>
@@ -57,83 +57,72 @@ const TopicCard = ({ topic, onRespond, onDiscuss, unreadMessages }) => {
           
           {/* Response Status Indicators */}
           {userResponse && !partnerResponse && (
-            <div className="flex items-center text-sm text-yellow-600 dark:text-yellow-400">
-              <div className="w-2 h-2 bg-yellow-400 rounded-full mr-2 animate-pulse" />
+            <div className="flex items-center text-sm text-[#25d366]">
+              <div className="w-2 h-2 bg-[#25d366] rounded-full mr-2 animate-pulse" />
               Waiting for {partnerName} to make a choice...
             </div>
           )}
           {partnerResponse && !userResponse && (
-            <div className="flex items-center text-sm text-blue-600 dark:text-blue-400">
-              <div className="w-2 h-2 bg-blue-400 rounded-full mr-2" />
+            <div className="flex items-center text-sm text-[#25d366]">
+              <div className="w-2 h-2 bg-[#25d366] rounded-full mr-2" />
               {partnerName} has made a choice - your turn!
             </div>
           )}
         </div>
-        
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+      </div>
+
+      {/* Actions */}
+      <div className="px-4 py-3 bg-[#f0f2f5] border-t border-gray-200 flex justify-between items-center">
+        <div className="flex items-center space-x-2">
+          {/* Response Buttons */}
           {!userResponse && (
             <>
               <button
-                onClick={() => onRespond(topic.id, 'agree')}
-                className="flex-1 inline-flex items-center justify-center px-3 py-2 text-sm font-medium rounded-full bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50 transition-colors"
+                onClick={() => onRespond(topic.id, true)}
+                className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-full text-[#25d366] bg-[#dcf8c6] hover:bg-[#d5f5bd]"
               >
-                <HandThumbUpIcon className="h-5 w-5 mr-1.5" />
-                Agree
+                <HandThumbUpIcon className="h-4 w-4 mr-1" />
+                Yes
               </button>
               <button
-                onClick={() => onRespond(topic.id, 'disagree')}
-                className="flex-1 inline-flex items-center justify-center px-3 py-2 text-sm font-medium rounded-full bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 transition-colors"
+                onClick={() => onRespond(topic.id, false)}
+                className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-full text-[#ef4444] bg-[#fee2e2] hover:bg-[#fecaca]"
               >
-                <HandThumbDownIcon className="h-5 w-5 mr-1.5" />
-                Disagree
+                <HandThumbDownIcon className="h-4 w-4 mr-1" />
+                No
               </button>
             </>
           )}
-          {userResponse && (
-            <div className="flex-1 flex items-center space-x-3">
-              <span className={`
-                inline-flex items-center px-3 py-1 rounded-full text-sm font-medium
-                ${userResponse === 'agree' 
-                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                }
-              `}>
-                {userResponse === 'agree' ? (
-                  <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
-                ) : (
-                  <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
-                )}
-                You {userResponse === 'agree' ? 'Agreed' : 'Disagreed'}
-              </span>
-              {partnerResponse && (
-                <span className={`
-                  inline-flex items-center px-3 py-1 rounded-full text-sm font-medium
-                  ${partnerResponse === 'agree' 
-                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                  }
-                `}>
-                  {partnerResponse === 'agree' ? (
-                    <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
-                  ) : (
-                    <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
-                  )}
-                  {partnerName} {partnerResponse === 'agree' ? 'Agreed' : 'Disagreed'}
-                </span>
-              )}
+          
+          {/* Show Response */}
+          {userResponse !== undefined && (
+            <div className={`
+              inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-full
+              ${userResponse 
+                ? 'text-[#25d366] bg-[#dcf8c6]'
+                : 'text-[#ef4444] bg-[#fee2e2]'
+              }
+            `}>
+              {userResponse 
+                ? <HandThumbUpIcon className="h-4 w-4 mr-1" />
+                : <HandThumbDownIcon className="h-4 w-4 mr-1" />
+              }
+              Your choice: {userResponse ? 'Yes' : 'No'}
             </div>
           )}
-          <button
-            onClick={() => onDiscuss(topic)}
-            className="flex-none inline-flex items-center justify-center px-3 py-2 text-sm font-medium rounded-full bg-primary-100 text-primary-700 hover:bg-primary-200 dark:bg-primary-900/30 dark:text-primary-400 dark:hover:bg-primary-900/50 transition-colors relative"
-          >
-            <ChatBubbleLeftRightIcon className="h-5 w-5 mr-1.5" />
-            Discuss
-            {unreadMessages && (
-              <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full animate-pulse" />
-            )}
-          </button>
         </div>
+
+        {/* Discuss Button */}
+        <button
+          onClick={() => onDiscuss(topic)}
+          className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-full text-[#25d366] bg-[#dcf8c6] hover:bg-[#d5f5bd] relative"
+        >
+          <ChatBubbleLeftRightIcon className="h-4 w-4 mr-1" />
+          Discuss
+          {unreadMessages && (
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#25d366] rounded-full animate-pulse" />
+          )}
+        </button>
       </div>
     </div>
   );
@@ -150,7 +139,6 @@ const Topics = () => {
   const [selectedTopic, setSelectedTopic] = useState(null);
   // eslint-disable-next-line no-unused-vars
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
-  // eslint-disable-next-line no-unused-vars
   const [unreadResponses, setUnreadResponses] = useState({});
   const [unreadMessagesByTopic, setUnreadMessagesByTopic] = useState({});
 
@@ -190,71 +178,60 @@ const Topics = () => {
     return () => window.removeEventListener('openTopicChat', handleOpenChat);
   }, [topics]);
 
-  // Fetch topics
+  // Load topics
   useEffect(() => {
-    // Clear topics immediately if not connected
-    if (!user?.uid || !partner?.uid || !user?.email || !partner?.email || !isOnline) {
+    if (!user?.uid || !partner?.uid || !isOnline) {
       setTopics([]);
       setLoading(false);
       return;
     }
 
-    // Create a unique pairing ID using email addresses
-    const getPairingId = (email1, email2) => {
-      return [email1, email2].sort().join('_');
-    };
-
-    const currentPairingId = getPairingId(user.email, partner.email);
     const topicsRef = ref(rtdb, 'topics');
     
     const unsubscribe = onValue(topicsRef, (snapshot) => {
-      try {
-        // Clear topics if disconnected during fetch
-        if (!isOnline || !partner?.email) {
-          setTopics([]);
-          setLoading(false);
-          return;
-        }
-
-        const data = snapshot.val();
-        if (!data) {
-          setTopics([]);
-          setLoading(false);
-          return;
-        }
-
-        const filteredTopics = Object.entries(data)
-          .map(([id, topic]) => ({
-            id,
-            ...topic,
-            pairingId: topic.initiatorEmail && topic.initialPartnerEmail ? 
-              getPairingId(topic.initiatorEmail, topic.initialPartnerEmail) : null
-          }))
-          .filter(topic => {
-            // Only show topics for current pairing
-            return (
-              topic.pairingId === currentPairingId &&
-              topic.participants?.includes(user.uid) &&
-              topic.participants?.includes(partner.uid)
-            );
-          })
-          .sort((a, b) => b.createdAt - a.createdAt);
-
-        setTopics(filteredTopics);
+      const data = snapshot.val();
+      if (!data) {
+        setTopics([]);
         setLoading(false);
-      } catch (err) {
-        console.error('Error fetching topics:', err);
-        setError(err.message);
-        setLoading(false);
+        return;
       }
+
+      // Filter topics to only include those between current partners
+      const relevantTopics = Object.entries(data)
+        .filter(([_, topic]) => {
+          // Check both createdBy/partnerId and vice versa to catch all relevant topics
+          const isRelevantTopic = 
+            (topic.createdBy === user.uid && topic.partnerId === partner.uid) ||
+            (topic.createdBy === partner.uid && topic.partnerId === user.uid);
+          
+          return isRelevantTopic;
+        })
+        .map(([id, topic]) => ({
+          id,
+          ...topic,
+          responses: topic.responses || {},
+          status: topic.status || 'active'
+        }))
+        .sort((a, b) => {
+          // Handle both timestamp types (number and server timestamp)
+          const timeA = typeof a.createdAt === 'number' ? a.createdAt : a.createdAt?.toMillis?.() || 0;
+          const timeB = typeof b.createdAt === 'number' ? b.createdAt : b.createdAt?.toMillis?.() || 0;
+          return timeB - timeA;
+        });
+
+      setTopics(relevantTopics);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error loading topics:', error);
+      setError(error.message);
+      setLoading(false);
     });
 
     return () => {
-      // Clean up listener and clear topics when unmounting or disconnecting
       setTopics([]);
       unsubscribe();
     };
-  }, [user?.uid, user?.email, partner?.uid, partner?.email, isOnline]);
+  }, [user?.uid, partner?.uid, isOnline]);
 
   useEffect(() => {
     if (!user?.uid || !topics.length) return;
@@ -378,18 +355,17 @@ const Topics = () => {
         question: newTopic.trim(),
         category: selectedCategory === 'All' ? 'Custom' : selectedCategory,
         createdBy: user.uid,
+        creatorName: user.displayName || 'Anonymous',
+        partnerId: partner.uid,
+        partnerName: partner.displayName || 'Partner',
         createdAt: serverTimestamp(),
-        participants: [user.uid, partner.uid],
-        status: 'in_progress',
-        responses: {},
-        // Add email information for pairing
-        initiatorEmail: user.email,
-        initialPartnerEmail: partner.email
+        status: 'active',
+        responses: {}
       };
 
       console.log('Adding new topic:', topicData);
       
-      await update(newTopicRef, topicData);
+      await set(newTopicRef, topicData);
       console.log('Topic added successfully');
 
       setNewTopic('');
@@ -404,16 +380,34 @@ const Topics = () => {
     if (!isOnline) return;
 
     try {
+      setError(null);
+      
+      // First get the current topic data
       const topicRef = ref(rtdb, `topics/${topicId}`);
-      const responseData = {
-        userId: user.uid,
-        response,
-        timestamp: serverTimestamp()
+      const snapshot = await get(topicRef);
+      const topicData = snapshot.val();
+      
+      if (!topicData) {
+        throw new Error('Topic not found');
+      }
+
+      // Prepare the response update
+      const responseUpdate = {
+        [`responses/${user.uid}`]: {
+          response: response,
+          timestamp: serverTimestamp(),
+          userName: user.displayName || 'Anonymous'
+        }
       };
 
-      await update(topicRef, {
-        [`responses/${user.uid}`]: responseData
-      });
+      // Check if both have responded
+      const partnerResponse = topicData.responses?.[partner?.uid]?.response;
+      if (partnerResponse !== undefined) {
+        responseUpdate.status = 'completed';
+      }
+
+      // Update only the necessary fields
+      await update(topicRef, responseUpdate);
 
       // Send notification to partner
       if (partner?.uid) {
@@ -430,23 +424,9 @@ const Topics = () => {
         });
       }
 
-      // Check if both partners have responded
-      const topic = topics.find(t => t.id === topicId);
-      if (topic) {
-        const responses = { 
-          ...topic.responses, 
-          [user.uid]: responseData 
-        };
-        
-        if (responses[user.uid] && responses[partner?.uid]) {
-          await update(topicRef, {
-            status: 'completed'
-          });
-        }
-      }
     } catch (err) {
       console.error('Error updating response:', err);
-      setError(err.message);
+      setError(err.message || 'Failed to update response. Please try again.');
     }
   };
 

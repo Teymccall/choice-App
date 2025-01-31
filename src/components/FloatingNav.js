@@ -54,7 +54,7 @@ const FloatingNav = () => {
   useEffect(() => {
     if (location.pathname === '/topics' && user?.uid) {
       // Clear new topics badge
-      localStorage.setItem(`lastChecked_topics_${user.uid}`, Date.now().toString());
+      localStorage.setItem(`lastChecked_topics_${user.uid}_${partner?.uid || 'none'}`, Date.now().toString());
       setNewTopics(0);
       
       // Clear unread chats if a topic is open
@@ -67,11 +67,28 @@ const FloatingNav = () => {
       // Clear pending responses
       setPendingResponses(0);
     }
-  }, [location.pathname, user?.uid]);
+  }, [location.pathname, user?.uid, partner?.uid]);
+
+  // Reset notifications when partner changes
+  useEffect(() => {
+    if (user?.uid && partner?.uid) {
+      // Reset last checked time for new partnership
+      localStorage.setItem(`lastChecked_topics_${user.uid}_${partner.uid}`, Date.now().toString());
+      setNewTopics(0);
+      setPendingResponses(0);
+      setUnreadChats(0);
+    }
+  }, [user?.uid, partner?.uid]);
 
   // Track notifications and unread messages
   useEffect(() => {
-    if (!user?.uid || !partner?.uid) return;
+    if (!user?.uid || !partner?.uid) {
+      // Reset counts if no partner
+      setNewTopics(0);
+      setPendingResponses(0);
+      setUnreadChats(0);
+      return;
+    }
 
     const topicsRef = ref(rtdb, 'topics');
     
@@ -83,16 +100,32 @@ const FloatingNav = () => {
         return;
       }
 
+      // Get the last checked timestamp for this specific partnership
+      const lastCheckedTopics = parseInt(
+        localStorage.getItem(`lastChecked_topics_${user.uid}_${partner.uid}`)
+      ) || Date.now();
+
       // Check for new topics only if not on topics page
       const newTopicsCount = location.pathname !== '/topics' ? Object.values(data).filter(topic => {
-        const lastCheckedTopics = parseInt(localStorage.getItem(`lastChecked_topics_${user.uid}`)) || 0;
-        return topic.createdAt > lastCheckedTopics && topic.createdBy !== user.uid;
+        // Only count topics that involve both current user and current partner
+        const isRelevantTopic = (topic.createdBy === user.uid && topic.partnerId === partner.uid) ||
+                               (topic.createdBy === partner.uid && topic.partnerId === user.uid);
+        
+        return isRelevantTopic && 
+               topic.createdAt > lastCheckedTopics && 
+               topic.createdBy !== user.uid;
       }).length : 0;
+      
       setNewTopics(newTopicsCount);
 
       // Check for new responses only if not on topics page
       const responsesCount = location.pathname !== '/topics' ? Object.values(data).filter(topic => {
-        if (!topic.responses || !topic.responses[partner.uid]) return false;
+        // Only count responses for topics between current partners
+        const isRelevantTopic = (topic.createdBy === user.uid && topic.partnerId === partner.uid) ||
+                               (topic.createdBy === partner.uid && topic.partnerId === user.uid);
+        
+        if (!isRelevantTopic || !topic.responses || !topic.responses[partner.uid]) return false;
+        
         const lastChecked = parseInt(localStorage.getItem(`lastChecked_${topic.id}_${user.uid}`)) || 0;
         const partnerResponseTime = parseInt(topic.responses[partner.uid].timestamp);
         return partnerResponseTime > lastChecked && !topic.responses[user.uid];

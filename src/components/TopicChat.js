@@ -225,28 +225,29 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
     if (!message.replyTo) return null;
     
     return (
-          <div 
-            className={`
-          text-[12.8px] mb-0.5 px-3 py-[4px] cursor-pointer flex items-start space-x-2
-              ${isOwnMessage 
-                ? 'bg-[#0b846d]/[0.08] text-[#0b846d]' 
-                : 'bg-[#667781]/[0.08] text-[#667781]'
-              }
-              rounded-[7px] rounded-bl-none w-full hover:opacity-80 transition-opacity
-            `}
-            onClick={handleReplyClick}
-          >
+      <div 
+        className={`
+          text-[13px] -mb-1 px-2 pt-1 pb-2 cursor-pointer flex items-start space-x-2
+          ${isOwnMessage 
+            ? 'bg-[#dcf8c6] text-[#303030]' 
+            : 'bg-white text-[#303030]'
+          }
+          rounded-t-[7px] hover:opacity-95 transition-opacity
+        `}
+        onClick={handleReplyClick}
+      >
+        <div className="w-0.5 h-full bg-[#25d366] self-stretch flex-none mr-2"/>
         <div className="flex-1 min-w-0">
-          <span className="font-medium block">
-              {message.replyTo.userId === user.uid ? 'You' : 'Partner'}
-            </span>
+          <span className="font-medium text-[#25d366] block text-[13px]">
+            {message.replyTo.userId === user.uid ? 'You' : 'Partner'}
+          </span>
           {message.replyTo.media ? (
             <div className="flex items-center space-x-2">
-              <PhotoIcon className="h-4 w-4 flex-shrink-0" />
-              <span className="truncate opacity-80">Photo</span>
+              <PhotoIcon className="h-4 w-4 flex-shrink-0 text-[#667781]" />
+              <span className="truncate text-[#667781]">Photo</span>
             </div>
           ) : (
-            <span className="truncate opacity-80">
+            <span className="block truncate text-[#667781]">
               {message.replyTo.text}
             </span>
           )}
@@ -274,48 +275,58 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
             }
           }}
         >
-          {renderReplyContent()}
-
-        <div className={`
-          relative group
-            ${message.media && !isDeleted ? 'rounded-lg overflow-hidden' : 'rounded-[7px]'}
-          ${isOwnMessage 
-              ? isDeleted ? 'bg-[#f0f0f0] dark:bg-[#1f2937]/50' : 'bg-[#e7ffdb] dark:bg-[#005c4b]'
-              : isDeleted ? 'bg-[#f0f0f0] dark:bg-[#1f2937]/50' : 'bg-white dark:bg-[#202c33]'
-          }
-            ${message.media && !isDeleted ? '' : isOwnMessage ? 'rounded-tr-[4px]' : 'rounded-tl-[4px]'}
-          shadow-sm
-        `}>
-          {/* Message tail */}
-          <div className={`
-            absolute top-0 w-3 h-3 overflow-hidden
-            ${isOwnMessage ? '-right-[10px]' : '-left-[10px]'}
-              ${isDeleted ? 'hidden' : ''}
-          `}>
+          {message.replyTo && (
             <div className={`
-              w-4 h-4 transform rotate-45 origin-top-left
               ${isOwnMessage 
-                ? 'bg-[#e7ffdb] dark:bg-[#005c4b] -translate-x-1/2' 
-                : 'bg-white dark:bg-[#202c33] translate-x-1/2'
-              }
-            `}/>
-          </div>
+                ? 'bg-[#dcf8c6]' 
+                : 'bg-white'
+              } rounded-t-[7px] overflow-hidden
+            `}>
+              {renderReplyContent()}
+            </div>
+          )}
 
-          <div className="px-[9px] py-[6px] min-w-[85px]">
+          <div className={`
+            relative group
+            ${message.media && !isDeleted ? 'rounded-lg overflow-hidden' : message.replyTo ? 'rounded-b-[7px]' : 'rounded-[7px]'}
+            ${isOwnMessage 
+              ? isDeleted ? 'bg-[#f0f0f0]' : 'bg-[#dcf8c6]'
+              : isDeleted ? 'bg-[#f0f0f0]' : 'bg-white'
+            }
+            ${message.media && !isDeleted ? '' : isOwnMessage ? 'rounded-tr-[4px]' : 'rounded-tl-[4px]'}
+            shadow-sm
+          `}>
+            {/* Message tail */}
+            <div className={`
+              absolute top-0 w-3 h-3 overflow-hidden
+              ${isOwnMessage ? '-right-[10px]' : '-left-[10px]'}
+              ${isDeleted ? 'hidden' : ''}
+              ${message.replyTo ? 'top-[unset] bottom-0' : ''}
+            `}>
+              <div className={`
+                w-4 h-4 transform rotate-45 origin-top-left
+                ${isOwnMessage 
+                  ? 'bg-[#dcf8c6] -translate-x-1/2' 
+                  : 'bg-white translate-x-1/2'
+                }
+              `}/>
+            </div>
+
+            <div className="px-[9px] py-[6px] min-w-[85px]">
               {isDeleted ? (
                 <div className="flex items-center space-x-2">
-                  <span className="text-[14.2px] text-gray-500 dark:text-gray-400 italic">
+                  <span className="text-[14.2px] text-gray-500 italic">
                     This message was deleted
                   </span>
-                  <span className="text-[11px] text-gray-500 dark:text-gray-400 leading-none">
+                  <span className="text-[11px] text-gray-500 leading-none">
                     {timeString}
                   </span>
-              </div>
+                </div>
               ) : (
                 <>
                   {message.media && renderMediaContent()}
-            {message.text && (
-              <div className="flex flex-col">
+                  {message.text && (
+                    <div className="flex flex-col">
                       {showEditInput ? (
                         <div className="flex items-center space-x-2">
                           <textarea
@@ -340,39 +351,35 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
                           />
                           <button
                             onClick={handleEdit}
-                            className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                            className="text-blue-500 hover:text-blue-600"
                           >
                             <CheckIcon className="h-5 w-5" />
                           </button>
                         </div>
                       ) : (
-                <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] ${
-                  isOwnMessage 
-                    ? 'text-[#111b21] dark:text-[#e9edef]' 
-                    : 'text-[#111b21] dark:text-[#e9edef]'
-                }`}>
-                  {message.text}
+                        <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] text-[#303030]`}>
+                          {message.text}
                           {message.edited && (
-                            <span className="text-[11px] text-[#667781] dark:text-[#8696a0] ml-1">
+                            <span className="text-[11px] text-[#667781] ml-1">
                               (edited)
                             </span>
                           )}
-                </p>
+                        </p>
                       )}
-                <div className="flex justify-end items-center mt-1 space-x-1">
-                  <span className="text-[11px] text-[#667781] dark:text-[#8696a0] leading-none">
-                    {timeString}
-                  </span>
-                  {renderReadReceipt()}
-                </div>
-              </div>
+                      <div className="flex justify-end items-center mt-1 space-x-1">
+                        <span className="text-[11px] text-[#667781] leading-none">
+                          {timeString}
+                        </span>
+                        {renderReadReceipt()}
+                      </div>
+                    </div>
                   )}
                 </>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
       {/* Delete/Edit Modal */}
       {showDeleteModal && !isDeleted && (
