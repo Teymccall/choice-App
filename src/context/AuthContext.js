@@ -7,7 +7,10 @@ import {
   updateProfile,
   getAuth,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  browserLocalPersistence,
+  setPersistence,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { 
   doc, 
@@ -34,7 +37,7 @@ import {
   set, 
   get,
   update,
-  serverTimestamp as rtdbTimestamp,
+  serverTimestamp,
   onDisconnect,
   off,
   remove
@@ -128,6 +131,26 @@ const cleanupFirestore = async () => {
   }
 };
 
+// Add connection state management
+const CONNECTION_RETRY_DELAY = 3000;
+const MAX_CONNECTION_RETRIES = 3;
+
+// Helper function for handling connection retries
+const withConnectionRetry = async (operation, retries = 0) => {
+  try {
+    return await operation();
+  } catch (error) {
+    if (retries < MAX_CONNECTION_RETRIES && 
+        (error.code === 'NETWORK_ERROR' || 
+         error.code === 'PERMISSION_DENIED' || 
+         error.name === 'FirebaseError')) {
+      await new Promise(resolve => setTimeout(resolve, CONNECTION_RETRY_DELAY));
+      return withConnectionRetry(operation, retries + 1);
+    }
+    throw error;
+  }
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [partner, setPartner] = useState(null);
@@ -144,23 +167,40 @@ export const AuthProvider = ({ children }) => {
   const userStatusRef = useRef(null);
   const listenerCleanups = useRef([]);
 
-  // Setup database listeners
+  // Add connection state management
+  const [connectionState, setConnectionState] = useState('checking');
+  const connectionRetryCount = useRef(0);
+
+  // Setup database listeners with improved connection handling
   const setupDatabaseListeners = async (user) => {
+    if (!user) return;
+
     try {
-      // Set up presence system
+      // Set up presence system with retry logic
       presenceRef.current = ref(rtdb, '.info/connected');
       userStatusRef.current = ref(rtdb, `connections/${user.uid}`);
       const userPresenceRef = ref(rtdb, `presence/${user.uid}`);
 
       const presenceUnsubscribe = onValue(presenceRef.current, async (snapshot) => {
-        if (!snapshot.val()) return;
-
         try {
-          // When we disconnect, update presence and connection status
-          await onDisconnect(userStatusRef.current).remove();
-          await onDisconnect(userPresenceRef).update({
-            isOnline: false,
-            lastOnline: rtdbTimestamp()
+          if (!snapshot.val()) {
+            setConnectionState('disconnected');
+            return;
+          }
+
+          setConnectionState('connected');
+          connectionRetryCount.current = 0;
+
+          // Set up disconnect handlers with validation
+          await withConnectionRetry(async () => {
+            const disconnectRef = onDisconnect(userStatusRef.current);
+            await disconnectRef.remove();
+
+            const presenceDisconnectRef = onDisconnect(userPresenceRef);
+            await presenceDisconnectRef.update({
+              isOnline: false,
+              lastOnline: serverTimestamp()
+            });
           });
 
           // Check if there's an existing partnership
@@ -168,25 +208,27 @@ export const AuthProvider = ({ children }) => {
           if (userDoc.exists() && userDoc.data().partnerId) {
             const partnerId = userDoc.data().partnerId;
             
-            // Set current connection status
-            await set(userStatusRef.current, {
-              partnerId: partnerId,
-              lastActive: rtdbTimestamp(),
-              status: 'online'
+            // Set current connection status with retry
+            await withConnectionRetry(async () => {
+              await set(userStatusRef.current, {
+                partnerId: partnerId,
+                lastActive: serverTimestamp(),
+                status: 'online',
+                connectionId: Date.now().toString() // Add unique connection ID
+              });
+
+              await set(userPresenceRef, {
+                isOnline: true,
+                lastOnline: serverTimestamp(),
+                connectionId: Date.now().toString()
+              });
             });
 
-            // Set presence status
-            await set(userPresenceRef, {
-              isOnline: true,
-              lastOnline: rtdbTimestamp()
-            });
-            
-            // Get and set partner data
+            // Set up partner monitoring with improved error handling
             const partnerDoc = await getDoc(doc(db, 'users', partnerId));
             if (partnerDoc.exists()) {
               setPartner(partnerDoc.data());
 
-              // Listen for partner's presence
               const partnerPresenceRef = ref(rtdb, `presence/${partnerId}`);
               const partnerPresenceUnsubscribe = onValue(partnerPresenceRef, (presenceSnapshot) => {
                 if (presenceSnapshot.exists()) {
@@ -194,54 +236,53 @@ export const AuthProvider = ({ children }) => {
                   setPartner(current => ({
                     ...current,
                     isOnline: presenceData.isOnline,
-                    lastOnline: presenceData.lastOnline
+                    lastOnline: presenceData.lastOnline,
+                    connectionId: presenceData.connectionId
                   }));
                 }
               });
 
-              // Listen for partner's connection status
+              // Monitor partner connection with improved validation
               const partnerConnectionRef = ref(rtdb, `connections/${partnerId}`);
               const partnerConnectionUnsubscribe = onValue(partnerConnectionRef, async (connectionSnapshot) => {
                 if (!connectionSnapshot.exists()) {
-                  // Partner has disconnected - update both users
-                  const batch = writeBatch(db);
-                  
-                  // Update current user's document
-                  const currentUserRef = doc(db, 'users', user.uid);
-                  batch.update(currentUserRef, {
-                    partnerId: null,
-                    partnerDisplayName: null,
-                    lastUpdated: Timestamp.now()
-                  });
-                  
-                  // Update partner's document
-                  const partnerRef = doc(db, 'users', partnerId);
-                  batch.update(partnerRef, {
-                    partnerId: null,
-                    partnerDisplayName: null,
-                    lastUpdated: Timestamp.now()
-                  });
-
-                  try {
-                    await batch.commit();
+                  // Validate disconnection before clearing partnership
+                  const freshPartnerDoc = await getDoc(doc(db, 'users', partnerId));
+                  if (!freshPartnerDoc.exists() || !freshPartnerDoc.data().partnerId) {
+                    // Partner has truly disconnected - update both users
+                    const batch = writeBatch(db);
                     
-                    // Remove current user's connection
-                    await remove(userStatusRef.current);
+                    // Update current user's document
+                    const currentUserRef = doc(db, 'users', user.uid);
+                    batch.update(currentUserRef, {
+                      partnerId: null,
+                      partnerDisplayName: null,
+                      lastUpdated: Timestamp.now()
+                    });
                     
-                    // Update presence
-                    await update(userPresenceRef, {
-                      isOnline: true,
-                      lastOnline: rtdbTimestamp()
+                    // Update partner's document
+                    const partnerRef = doc(db, 'users', partnerId);
+                    batch.update(partnerRef, {
+                      partnerId: null,
+                      partnerDisplayName: null,
+                      lastUpdated: Timestamp.now()
                     });
 
-                    // Update local state
-                    setPartner(null);
-                    setDisconnectMessage(`${partnerDoc.data().displayName || 'Your partner'} has disconnected`);
-                    
-                    // Clean up listeners
-                    await cleanupDatabaseListeners();
-                  } catch (err) {
-                    console.warn('Error handling partner disconnect:', err);
+                    try {
+                      await withConnectionRetry(async () => {
+                        await batch.commit();
+                        await remove(userStatusRef.current);
+                        await update(userPresenceRef, {
+                          isOnline: true,
+                          lastOnline: serverTimestamp()
+                        });
+                      });
+
+                      setPartner(null);
+                      setDisconnectMessage(`${partnerDoc.data().displayName || 'Your partner'} has disconnected`);
+                    } catch (err) {
+                      console.warn('Error handling partner disconnect:', err);
+                    }
                   }
                 }
               });
@@ -251,19 +292,26 @@ export const AuthProvider = ({ children }) => {
             }
           } else {
             // Set basic connection status if no partner
-            await set(userStatusRef.current, {
-              lastActive: rtdbTimestamp(),
-              status: 'online'
-            });
+            await withConnectionRetry(async () => {
+              await set(userStatusRef.current, {
+                lastActive: serverTimestamp(),
+                status: 'online',
+                connectionId: Date.now().toString()
+              });
 
-            // Set presence status
-            await set(userPresenceRef, {
-              isOnline: true,
-              lastOnline: rtdbTimestamp()
+              await set(userPresenceRef, {
+                isOnline: true,
+                lastOnline: serverTimestamp(),
+                connectionId: Date.now().toString()
+              });
             });
           }
         } catch (error) {
           console.error('Error in presence system:', error);
+          if (connectionRetryCount.current < MAX_CONNECTION_RETRIES) {
+            connectionRetryCount.current++;
+            setTimeout(() => setupDatabaseListeners(user), CONNECTION_RETRY_DELAY);
+          }
         }
       });
 
@@ -294,6 +342,10 @@ export const AuthProvider = ({ children }) => {
       }
     } catch (error) {
       console.error('Error setting up database listeners:', error);
+      if (connectionRetryCount.current < MAX_CONNECTION_RETRIES) {
+        connectionRetryCount.current++;
+        setTimeout(() => setupDatabaseListeners(user), CONNECTION_RETRY_DELAY);
+      }
     }
   };
 
@@ -462,16 +514,22 @@ export const AuthProvider = ({ children }) => {
       const userSettingsRef = ref(rtdb, `userSettings/${user.uid}`);
       const defaultSettings = {
         notifications: {
-          newTopics: true,
-          partnerResponses: true,
-          suggestions: true,
+          chatMessages: true,
+          topicResponses: true,
+          systemNotifications: true
         },
         theme: {
-          preference: 'system'
+          preference: 'system',
+          updatedAt: serverTimestamp()
         },
         privacy: {
           showProfile: true,
           anonymousNotes: false
+        },
+        profile: {
+          displayName: user.displayName || '',
+          email: user.email || '',
+          updatedAt: serverTimestamp()
         }
       };
 
@@ -479,6 +537,16 @@ export const AuthProvider = ({ children }) => {
       const snapshot = await get(userSettingsRef);
       if (!snapshot.exists()) {
         await set(userSettingsRef, defaultSettings);
+      } else {
+        // Update any missing sections while preserving existing settings
+        const currentSettings = snapshot.val();
+        const updatedSettings = {
+          notifications: { ...defaultSettings.notifications, ...currentSettings?.notifications },
+          theme: { ...defaultSettings.theme, ...currentSettings?.theme },
+          privacy: { ...defaultSettings.privacy, ...currentSettings?.privacy },
+          profile: { ...defaultSettings.profile, ...currentSettings?.profile }
+        };
+        await update(userSettingsRef, updatedSettings);
       }
 
       // Clear partner state
@@ -664,7 +732,7 @@ export const AuthProvider = ({ children }) => {
       const userConnectionRef = ref(rtdb, `connections/${user.uid}`);
       await set(userConnectionRef, {
         partnerId: partnerDoc.id,
-        lastActive: rtdbTimestamp(),
+        lastActive: serverTimestamp(),
         status: 'online'
       });
 
@@ -675,7 +743,7 @@ export const AuthProvider = ({ children }) => {
           [Date.now()]: {
             type: 'partner_connected',
             message: `${user.displayName || 'A new partner'} has connected with you`,
-            timestamp: rtdbTimestamp()
+            timestamp: serverTimestamp()
           }
         });
       } catch (err) {
@@ -830,7 +898,7 @@ export const AuthProvider = ({ children }) => {
           [Date.now()]: {
             type: 'partner_disconnected',
             message: `${user.displayName || 'Your partner'} has disconnected`,
-            timestamp: rtdbTimestamp()
+            timestamp: serverTimestamp()
           }
         });
       } catch (err) {
@@ -842,7 +910,7 @@ export const AuthProvider = ({ children }) => {
         const userPresenceRef = ref(rtdb, `presence/${user.uid}`);
         await update(userPresenceRef, {
           isOnline: true,
-          lastOnline: rtdbTimestamp()
+          lastOnline: serverTimestamp()
         });
       } catch (err) {
         console.warn('Error updating presence:', err);
@@ -947,6 +1015,16 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const resetPassword = async (email) => {
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setError(null);
+    } catch (error) {
+      setError(error.message);
+      throw error;
+    }
+  };
+
   const value = {
     user,
     partner,
@@ -964,6 +1042,7 @@ export const AuthProvider = ({ children }) => {
     error,
     isOnline,
     signInWithGoogle,
+    resetPassword
   };
 
   // Only show loading for initial auth check

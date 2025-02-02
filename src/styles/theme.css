@@ -1,0 +1,488 @@
+:root {
+  --transition-duration: 0.3s;
+  
+  /* Light theme variables */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f5;
+  --text-primary: #000000;
+  --text-secondary: #4b5563;
+  --border-color: #e5e5e5;
+  --input-bg: #ffffff;
+  --card-bg: #ffffff;
+  --hover-bg: #f3f4f6;
+  --login-bg: #f0f9ff;
+  --login-card-bg: #ffffff;
+  --chat-bg: #111827;
+  --chat-message-bg: #f3f4f6;
+  --chat-message-text: #000000;
+  --chat-time: #8696a0;
+  --chat-sender: #374151;
+  --nav-bg-light: #0284c7;
+  --nav-text-light: #ffffff;
+  --chat-message-sent-bg: #dcf8c6;
+  --chat-message-received-bg: #ffffff;
+  --chat-message-sent-text: #000000;
+  --chat-message-received-text: #000000;
+  --chat-media-overlay: rgba(0, 0, 0, 0.3);
+  --chat-tick-gray: #8696a0;
+  --chat-tick-blue: #53bdeb;
+  --chat-input-bg: #2a2b2e;
+}
+
+/* Dark theme variables */
+.dark {
+  --bg-primary: #1a1b1e;
+  --bg-secondary: #2a2b2e;
+  --text-primary: #ffffff;
+  --text-secondary: #d1d5db;
+  --border-color: #3a3b3e;
+  --input-bg: #2a2b2e;
+  --card-bg: #2a2b2e;
+  --hover-bg: #3a3b3e;
+  --login-bg: #111827;
+  --login-card-bg: #1f2937;
+  --chat-bg: #111827;
+  --chat-message-bg: #1f2937;
+  --chat-message-text: #e5e7eb;
+  --chat-time: #8696a0;
+  --chat-sender: #d1d5db;
+  --nav-bg-dark: #1f2937;
+  --nav-text-dark: #ffffff;
+  --chat-message-sent-bg: #202c33;
+  --chat-message-received-bg: #1f2937;
+  --chat-message-sent-text: #e4e6eb;
+  --chat-message-received-text: #e4e6eb;
+  --chat-media-overlay: rgba(0, 0, 0, 0.6);
+  --chat-tick-gray: #8696a0;
+  --chat-tick-blue: #53bdeb;
+}
+
+/* Global styles */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color var(--transition-duration) ease,
+              color var(--transition-duration) ease;
+}
+
+/* Chat styles */
+.chat-container {
+  background-color: var(--chat-bg);
+  min-height: 100vh;
+  padding: 16px 0;
+}
+
+.chat-message {
+  background-color: var(--chat-message-bg);
+  color: var(--chat-message-text);
+}
+
+.chat-time {
+  color: var(--chat-time);
+}
+
+.chat-sender {
+  color: var(--chat-sender);
+}
+
+/* Login page specific styles */
+.login-page {
+  background-color: var(--login-bg);
+  min-height: 100vh;
+}
+
+.login-card {
+  background-color: var(--login-card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.dark .login-page {
+  background-color: var(--login-bg);
+}
+
+.dark .login-card {
+  background-color: var(--login-card-bg);
+  border-color: var(--border-color);
+}
+
+.dark .login-input {
+  background-color: var(--input-bg) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+.dark .login-text {
+  color: var(--text-secondary);
+}
+
+.dark .login-link {
+  color: #60a5fa;
+}
+
+.dark .login-link:hover {
+  color: #93c5fd;
+}
+
+.dark .login-divider {
+  border-color: var(--border-color);
+}
+
+.dark .google-button {
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.dark .google-button:hover {
+  background-color: var(--hover-bg);
+}
+
+/* Card styles */
+.bg-white,
+.dark .bg-white {
+  background-color: var(--card-bg) !important;
+}
+
+/* Text styles */
+.text-gray-700,
+.dark .text-gray-700 {
+  color: var(--text-primary) !important;
+}
+
+.text-gray-500,
+.dark .text-gray-500 {
+  color: var(--text-secondary) !important;
+}
+
+h1, h2, h3, h4, h5, h6,
+.dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6 {
+  color: var(--text-primary);
+}
+
+p, span, div,
+.dark p, .dark span, .dark div {
+  color: var(--text-primary);
+}
+
+/* Border styles */
+.border-gray-200,
+.dark .border-gray-200 {
+  border-color: var(--border-color) !important;
+}
+
+/* Input styles */
+input, select, textarea {
+  background-color: var(--input-bg) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+input::placeholder {
+  color: var(--text-secondary) !important;
+  opacity: 0.7;
+}
+
+.dark input::placeholder {
+  color: var(--text-secondary) !important;
+  opacity: 0.7;
+}
+
+input:disabled {
+  background-color: var(--bg-secondary) !important;
+  opacity: 0.7;
+}
+
+/* Button styles */
+button:not(.bg-primary-600):not(.bg-red-500) {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* List styles */
+.list-item:hover {
+  background-color: var(--hover-bg);
+}
+
+/* Shadow adjustments */
+.dark .shadow {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Transition for all theme changes */
+* {
+  transition: background-color var(--transition-duration) ease,
+              border-color var(--transition-duration) ease,
+              color var(--transition-duration) ease,
+              box-shadow var(--transition-duration) ease;
+}
+
+/* Additional dark mode overrides */
+.dark .bg-gray-50,
+.dark .bg-gray-100 {
+  background-color: var(--bg-secondary) !important;
+}
+
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-gray-100:hover {
+  background-color: var(--hover-bg) !important;
+}
+
+/* Dialog/Modal styles */
+.dark .modal,
+.dark .dialog {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+/* Navigation styles */
+.dark nav {
+  background-color: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+/* Table styles */
+.dark table {
+  background-color: var(--card-bg);
+}
+
+.dark tr:hover {
+  background-color: var(--hover-bg);
+}
+
+.dark td,
+.dark th {
+  border-color: var(--border-color);
+}
+
+/* Form styles */
+.dark label {
+  color: var(--text-primary);
+}
+
+.dark .form-input,
+.dark .form-select,
+.dark .form-textarea {
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+/* Card header styles */
+.dark .card-header {
+  border-bottom-color: var(--border-color);
+}
+
+/* Dropdown styles */
+.dark .dropdown-content {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+.dark .dropdown-item:hover {
+  background-color: var(--hover-bg);
+}
+
+/* Navigation styles */
+.floating-nav {
+  background-color: var(--nav-bg-light);
+  color: var(--nav-text-light);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+}
+
+.floating-nav button,
+.floating-nav a,
+.floating-nav .nav-item {
+  color: var(--nav-text-light) !important;
+  background-color: var(--nav-bg-light) !important;
+  border: none !important;
+}
+
+.floating-nav .nav-icon,
+.floating-nav .nav-text {
+  color: var(--nav-text-light) !important;
+}
+
+.floating-nav button:hover,
+.floating-nav a:hover,
+.floating-nav .nav-item:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .floating-nav {
+  background-color: var(--nav-bg-dark);
+  color: var(--nav-text-dark);
+}
+
+.dark .floating-nav button,
+.dark .floating-nav a,
+.dark .floating-nav .nav-item {
+  color: var(--nav-text-dark) !important;
+  background-color: var(--nav-bg-dark) !important;
+}
+
+.dark .floating-nav .nav-icon,
+.dark .floating-nav .nav-text {
+  color: var(--nav-text-dark) !important;
+}
+
+.dark .floating-nav button:hover,
+.dark .floating-nav a:hover,
+.dark .floating-nav .nav-item:hover {
+  background-color: var(--hover-bg) !important;
+}
+
+/* Message styles */
+.message-container {
+  margin: 2px 16px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.message-sent {
+  background-color: var(--chat-message-sent-bg);
+  color: var(--chat-message-sent-text);
+  border-radius: 12px 0 12px 12px;
+  padding: 8px 12px;
+  max-width: 80%;
+  margin-left: auto;
+  margin-bottom: 2px;
+  position: relative;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.message-received {
+  background-color: var(--chat-message-received-bg);
+  color: var(--chat-message-received-text);
+  border-radius: 0 12px 12px 12px;
+  padding: 8px 12px;
+  max-width: 80%;
+  margin-right: auto;
+  margin-bottom: 2px;
+  position: relative;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.message-text {
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+  margin-right: 24px;
+  word-break: break-word;
+}
+
+.message-info {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 2px;
+  min-height: 15px;
+  padding-right: 4px;
+}
+
+.message-time {
+  color: var(--chat-time);
+  font-size: 0.6875rem;
+  margin-left: auto;
+  opacity: 0.8;
+}
+
+.dark .message-time {
+  color: var(--chat-time);
+  opacity: 0.7;
+}
+
+.message-status {
+  display: flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.tick {
+  width: 14px;
+  height: 14px;
+  margin-left: -4px;
+}
+
+.dark .tick-sent {
+  color: var(--chat-tick-gray);
+}
+
+.dark .tick-delivered {
+  color: var(--chat-tick-gray);
+}
+
+.dark .tick-read {
+  color: var(--chat-tick-blue);
+}
+
+/* Media container styles */
+.media-container {
+  position: relative;
+  max-width: 300px;
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 4px 0;
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.media-container img,
+.media-container video {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+}
+
+/* Download button styles */
+.media-download-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background-color: var(--chat-media-overlay);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0;
+  z-index: 10;
+}
+
+.media-container:hover .media-download-btn {
+  opacity: 1;
+}
+
+.media-download-btn:hover {
+  transform: scale(1.1);
+  background-color: rgba(0, 0, 0, 0.8);
+}
+
+/* Dark mode specific overrides */
+html.dark .message-sent {
+  background-color: var(--chat-message-sent-bg);
+  color: var(--chat-message-sent-text);
+}
+
+html.dark .message-received {
+  background-color: var(--chat-message-received-bg);
+  color: var(--chat-message-received-text);
+}
+
+html.dark .media-container {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .media-download-btn {
+  background-color: var(--chat-media-overlay);
+} 

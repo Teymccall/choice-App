@@ -4,6 +4,8 @@ import { AuthProvider } from './context/AuthContext';
 import Layout from './components/Layout';
 import LoadingSpinner from './components/LoadingSpinner';
 import PrivateRoute from './components/PrivateRoute';
+import NotificationHandler from './components/NotificationHandler';
+import './styles/theme.css'; // Import global theme styles
 
 // Lazy load pages for better performance
 const Home = React.lazy(() => import('./pages/Home'));
@@ -17,6 +19,7 @@ function App() {
   return (
     <Router>
       <AuthProvider>
+        <NotificationHandler />
         <Layout>
           <React.Suspense fallback={<LoadingSpinner />}>
             <Routes>

@@ -12,6 +12,7 @@ import {
   ChatBubbleLeftRightIcon,
   XMarkIcon,
   HashtagIcon,
+  CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 import { ref, onValue, push, update, serverTimestamp, get, set } from 'firebase/database';
 import { rtdb } from '../firebase/config';
@@ -39,88 +40,171 @@ const TopicCard = ({ topic, onRespond, onDiscuss, unreadMessages }) => {
   const partnerResponse = topic.responses?.[partner?.uid]?.response;
   const formattedDate = formatDate(topic.createdAt);
   const partnerName = partner?.displayName || 'Your partner';
+  const bothResponded = userResponse !== undefined && partnerResponse !== undefined;
+  const match = bothResponded && userResponse === partnerResponse;
   
+  // Get response status message
+  const getStatusMessage = () => {
+    if (!userResponse && !partnerResponse) {
+      return (
+        <div className="flex items-center text-sm text-blue-600 dark:text-blue-400">
+          <div className="w-2 h-2 bg-blue-500 rounded-full mr-2" />
+          Make your choice!
+        </div>
+      );
+    }
+    if (!userResponse && partnerResponse !== undefined) {
+      return (
+        <div className="flex items-center text-sm text-blue-600 dark:text-blue-400">
+          <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse" />
+          {partnerName} has made their choice - your turn!
+        </div>
+      );
+    }
+    if (userResponse !== undefined && !partnerResponse) {
+      return (
+        <div className="flex items-center text-sm text-green-600 dark:text-green-400">
+          <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse" />
+          Waiting for {partnerName}'s decision...
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-all duration-200 hover:shadow-md">
+      {/* Header */}
       <div className="p-4">
         <div className="flex flex-col space-y-2">
-          <h3 className="text-lg font-medium text-[#111b21]">
-            {topic.question}
-          </h3>
-          <div className="flex items-center justify-between text-sm">
-            <div className="flex items-center text-[#667781]">
-              <span>{formattedDate}</span>
-              <span className="mx-2">•</span>
-              <span>{topic.category || 'Custom'}</span>
-            </div>
+          <div className="flex items-start justify-between">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 flex-1">
+              {topic.question}
+            </h3>
+            {bothResponded && (
+              <span className={`flex-shrink-0 ml-2 px-2 py-1 rounded-full text-sm font-medium ${
+                match ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                     : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+              }`}>
+                {match ? 'Match! 🎉' : 'Different choices'}
+              </span>
+            )}
           </div>
           
-          {/* Response Status Indicators */}
-          {userResponse && !partnerResponse && (
-            <div className="flex items-center text-sm text-[#25d366]">
-              <div className="w-2 h-2 bg-[#25d366] rounded-full mr-2 animate-pulse" />
-              Waiting for {partnerName} to make a choice...
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center space-x-2 text-gray-600 dark:text-gray-400">
+              <span>{formattedDate}</span>
+              <span>•</span>
+              <span className="flex items-center">
+                {CATEGORY_ICONS[topic.category || 'Custom'] && (
+                  <span className="mr-1">
+                    {React.createElement(CATEGORY_ICONS[topic.category || 'Custom'], {
+                      className: "h-4 w-4"
+                    })}
+                  </span>
+                )}
+                {topic.category || 'Custom'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Responses Section */}
+      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-750 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex flex-col space-y-2">
+          {bothResponded ? (
+            // Show both responses only when both have responded
+            <>
+            <div className="flex items-center space-x-2">
+              <div className={`flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${
+                userResponse 
+                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                  : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+              }`}>
+                {userResponse 
+                  ? <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
+                  : <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
+                }
+                Your choice: {userResponse ? 'Yes' : 'No'}
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className={`flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${
+                partnerResponse 
+                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                  : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+              }`}>
+                {partnerResponse 
+                  ? <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
+                  : <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
+                }
+                {partnerName}'s choice: {partnerResponse ? 'Yes' : 'No'}
+                </div>
+              </div>
+            </>
+          ) : (
+            // Show appropriate status messages when not both responded
+            <>
+              {userResponse !== undefined && (
+                <div className="flex items-center space-x-2">
+                  <div className={`flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${
+                    userResponse 
+                      ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                      : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                  }`}>
+                    {userResponse 
+                      ? <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
+                      : <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
+                    }
+                    Your choice: {userResponse ? 'Yes' : 'No'}
+              </div>
             </div>
           )}
-          {partnerResponse && !userResponse && (
-            <div className="flex items-center text-sm text-[#25d366]">
-              <div className="w-2 h-2 bg-[#25d366] rounded-full mr-2" />
-              {partnerName} has made a choice - your turn!
-            </div>
+          {/* Status Message */}
+          {getStatusMessage()}
+            </>
           )}
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="px-4 py-3 bg-[#f0f2f5] border-t border-gray-200 flex justify-between items-center">
+      {/* Actions Section */}
+      <div className="px-4 py-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+        {/* Response Buttons - Disabled if user has already responded */}
         <div className="flex items-center space-x-2">
-          {/* Response Buttons */}
-          {!userResponse && (
-            <>
               <button
-                onClick={() => onRespond(topic.id, true)}
-                className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-full text-[#25d366] bg-[#dcf8c6] hover:bg-[#d5f5bd]"
+            onClick={() => onRespond(topic.id, true)}
+            disabled={userResponse !== undefined}
+            className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 
+              ${userResponse === undefined 
+                ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900 dark:text-green-200 dark:hover:bg-green-800'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-700 dark:text-gray-500'}`}
               >
-                <HandThumbUpIcon className="h-4 w-4 mr-1" />
+                <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
                 Yes
               </button>
               <button
-                onClick={() => onRespond(topic.id, false)}
-                className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-full text-[#ef4444] bg-[#fee2e2] hover:bg-[#fecaca]"
+            onClick={() => onRespond(topic.id, false)}
+            disabled={userResponse !== undefined}
+            className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200
+              ${userResponse === undefined 
+                ? 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900 dark:text-red-200 dark:hover:bg-red-800'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-700 dark:text-gray-500'}`}
               >
-                <HandThumbDownIcon className="h-4 w-4 mr-1" />
+                <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
                 No
               </button>
-            </>
-          )}
-          
-          {/* Show Response */}
-          {userResponse !== undefined && (
-            <div className={`
-              inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-full
-              ${userResponse 
-                ? 'text-[#25d366] bg-[#dcf8c6]'
-                : 'text-[#ef4444] bg-[#fee2e2]'
-              }
-            `}>
-              {userResponse 
-                ? <HandThumbUpIcon className="h-4 w-4 mr-1" />
-                : <HandThumbDownIcon className="h-4 w-4 mr-1" />
-              }
-              Your choice: {userResponse ? 'Yes' : 'No'}
-            </div>
-          )}
         </div>
 
         {/* Discuss Button */}
         <button
           onClick={() => onDiscuss(topic)}
-          className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-full text-[#25d366] bg-[#dcf8c6] hover:bg-[#d5f5bd] relative"
+          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-full text-primary-700 bg-primary-100 hover:bg-primary-200 dark:text-primary-200 dark:bg-primary-900 dark:hover:bg-primary-800 transition-colors relative"
         >
-          <ChatBubbleLeftRightIcon className="h-4 w-4 mr-1" />
+          <ChatBubbleLeftRightIcon className="h-4 w-4 mr-1.5" />
           Discuss
           {unreadMessages && (
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#25d366] rounded-full animate-pulse" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-primary-600 rounded-full animate-pulse" />
           )}
         </button>
       </div>
@@ -377,21 +461,46 @@ const Topics = () => {
   };
 
   const handleResponse = async (topicId, response) => {
-    if (!isOnline) return;
+    if (!isOnline) {
+      setError('You must be online to respond to topics');
+      return;
+    }
+
+    if (!user?.uid || !partner?.uid) {
+      setError('You must be connected with a partner to respond to topics');
+      return;
+    }
 
     try {
       setError(null);
       
-      // First get the current topic data
+      // Get the current topic data
       const topicRef = ref(rtdb, `topics/${topicId}`);
       const snapshot = await get(topicRef);
-      const topicData = snapshot.val();
       
-      if (!topicData) {
-        throw new Error('Topic not found');
+      if (!snapshot.exists()) {
+        setError('Topic not found. It may have been deleted.');
+        return;
       }
 
-      // Prepare the response update
+      const topicData = snapshot.val();
+      
+      // Validate topic belongs to current user pair
+      const isValidTopic = (topicData.createdBy === user.uid && topicData.partnerId === partner.uid) ||
+                          (topicData.createdBy === partner.uid && topicData.partnerId === user.uid);
+      
+      if (!isValidTopic) {
+        setError('You are not authorized to respond to this topic');
+        return;
+      }
+
+      // Check if user has already responded
+      if (topicData.responses?.[user.uid]?.response !== undefined) {
+        setError('You have already responded to this topic');
+        return;
+      }
+
+      // Update the response
       const responseUpdate = {
         [`responses/${user.uid}`]: {
           response: response,
@@ -400,13 +509,6 @@ const Topics = () => {
         }
       };
 
-      // Check if both have responded
-      const partnerResponse = topicData.responses?.[partner?.uid]?.response;
-      if (partnerResponse !== undefined) {
-        responseUpdate.status = 'completed';
-      }
-
-      // Update only the necessary fields
       await update(topicRef, responseUpdate);
 
       // Send notification to partner
@@ -414,19 +516,35 @@ const Topics = () => {
         const notificationRef = ref(rtdb, `notifications/${partner.uid}`);
         const notificationData = {
           type: 'topic_response',
+          title: 'New Response',
+          body: `${user.displayName || 'Your partner'} has responded to "${topicData.question}"`,
           senderName: user.displayName || 'Your partner',
-          topicTitle: topics.find(t => t.id === topicId)?.question || 'a topic',
-          timestamp: serverTimestamp()
+          topicId: topicId,
+          timestamp: serverTimestamp(),
+          data: {
+            type: 'topic_response',
+            topicId: topicId
+          }
         };
         
         await update(notificationRef, {
           [Date.now()]: notificationData
         });
+
+        // Get partner's FCM tokens
+        const tokenRef = ref(rtdb, `users/${partner.uid}/fcmTokens`);
+        const tokenSnapshot = await get(tokenRef);
+        const tokens = tokenSnapshot.val();
+
+        if (tokens) {
+          console.log('Sending notification to partner tokens:', Object.keys(tokens));
+          // The actual sending of FCM messages should be handled by a Cloud Function
+        }
       }
 
     } catch (err) {
       console.error('Error updating response:', err);
-      setError(err.message || 'Failed to update response. Please try again.');
+      setError('Failed to update response. Please try again later.');
     }
   };
 
@@ -557,13 +675,19 @@ const Topics = () => {
               value={newTopic}
               onChange={(e) => setNewTopic(e.target.value)}
               placeholder="Enter a new topic..."
-              className="flex-1 h-10 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="flex-1 h-10 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 capitalize"
+              style={{ textTransform: 'capitalize' }}
             />
             <button
               type="submit"
-              className="h-10 px-4 inline-flex items-center justify-center border border-transparent rounded-lg text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:focus:ring-offset-gray-900"
+              disabled={!newTopic.trim()}
+              className={`h-10 px-4 inline-flex items-center justify-center border border-transparent rounded-lg text-sm font-medium text-white transition-all duration-200 ${
+                newTopic.trim() 
+                  ? 'bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:focus:ring-offset-gray-900' 
+                  : 'bg-gray-300 cursor-not-allowed dark:bg-gray-700'
+              }`}
             >
-              <PlusIcon className="h-5 w-5" />
+              <PlusIcon className={`h-5 w-5 ${newTopic.trim() ? 'text-white' : 'text-gray-500'}`} />
               <span className="sr-only">Add Topic</span>
             </button>
           </div>

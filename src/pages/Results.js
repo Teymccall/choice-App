@@ -61,24 +61,16 @@ const Results = () => {
 
   // Fetch completed topics
   useEffect(() => {
-    // Clear results immediately if not connected
-    if (!user?.uid || !partner?.uid || !user?.email || !partner?.email || !isOnline) {
+    if (!user?.uid || !partner?.uid || !isOnline) {
       setResults([]);
       setLoading(false);
       return;
     }
 
-    // Create a unique pairing ID using email addresses to ensure consistency across sessions
-    const getPairingId = (email1, email2) => {
-      return [email1, email2].sort().join('_');
-    };
-
-    const currentPairingId = getPairingId(user.email, partner.email);
     const topicsRef = ref(rtdb, 'topics');
     
     const unsubscribe = onValue(topicsRef, (snapshot) => {
       try {
-        // If connection is lost during fetch, clear results
         if (!isOnline) {
           setResults([]);
           setLoading(false);
@@ -92,70 +84,58 @@ const Results = () => {
           return;
         }
 
-        const completedTopics = !data ? [] : Object.entries(data)
+        const completedTopics = Object.entries(data)
           .map(([id, topic]) => ({
             id,
             ...topic,
-            belongsToCurrentPair: topic?.initiatorEmail && topic?.initialPartnerEmail ? 
-              getPairingId(topic.initiatorEmail, topic.initialPartnerEmail) === currentPairingId : false,
-            matched: topic?.responses?.[user.uid]?.response === topic?.responses?.[partner.uid]?.response
+            matched: topic.responses?.[user.uid]?.response === topic.responses?.[partner.uid]?.response
           }))
           .filter(topic => {
-            // Only show topics that:
-            // 1. Belong to the current pairing (using emails)
-            // 2. Have responses from both current users
-            // 3. Are completed
-            // 4. Connection is still active
-            return (
-              isOnline &&
-              topic?.belongsToCurrentPair &&
-              topic?.status === 'completed' &&
-              topic?.responses?.[user.uid]?.response &&
-              topic?.responses?.[partner.uid]?.response
+            const belongsToUsers = (
+              (topic.createdBy === user.uid && topic.partnerId === partner.uid) ||
+              (topic.createdBy === partner.uid && topic.partnerId === user.uid)
             );
+            const hasAllResponses = (
+              topic.responses?.[user.uid]?.response !== undefined &&
+              topic.responses?.[partner.uid]?.response !== undefined
+            );
+            return belongsToUsers && hasAllResponses;
           })
-          .sort((a, b) => (b?.createdAt || 0) - (a?.createdAt || 0));
+          .sort((a, b) => {
+            const timeA = a.createdAt ? (typeof a.createdAt === 'number' ? a.createdAt : a.createdAt.toMillis?.() || 0) : 0;
+            const timeB = b.createdAt ? (typeof b.createdAt === 'number' ? b.createdAt : b.createdAt.toMillis?.() || 0) : 0;
+            return timeB - timeA;
+          });
 
         setResults(completedTopics);
         setLoading(false);
 
         // Calculate stats
-        const totalTopics = completedTopics.length;
-        const completed = completedTopics.length; // All filtered topics are completed
-        const pending = Object.values(data)
-          .filter(topic => 
-            topic?.initiatorEmail && 
-            topic?.initialPartnerEmail && 
-            getPairingId(topic.initiatorEmail, topic.initialPartnerEmail) === currentPairingId &&
-            (!topic?.responses?.[user.uid]?.response || !topic?.responses?.[partner.uid]?.response)
+        const totalTopics = Object.values(data).filter(topic => 
+          (topic.createdBy === user.uid && topic.partnerId === partner.uid) ||
+          (topic.createdBy === partner.uid && topic.partnerId === user.uid)
           ).length;
+
         const matched = completedTopics.filter(topic => topic.matched).length;
-        const agreementRate = completed > 0 ? (matched / completed * 100) : 0;
+        const agreementRate = completedTopics.length > 0 ? (matched / completedTopics.length * 100) : 0;
 
         setStats({
-          totalTopics: totalTopics + pending,
-          completedTopics: completed,
-          pendingTopics: pending,
+          totalTopics,
+          completedTopics: completedTopics.length,
+          pendingTopics: totalTopics - completedTopics.length,
           matchedTopics: matched,
-          agreementRate: agreementRate || 0
+          agreementRate: Math.round(agreementRate)
         });
+
       } catch (err) {
         console.error('Error processing results:', err);
-        setError(err.message);
+        setError('Failed to load results. Please try again.');
         setLoading(false);
       }
-    }, (err) => {
-      console.error('Error fetching results:', err);
-      setError(err.message);
-      setLoading(false);
     });
 
-    return () => {
-      // Clean up listener and clear results when partner changes or disconnects
-      setResults([]);
-      unsubscribe();
-    };
-  }, [user?.uid, user?.email, partner?.uid, partner?.email, isOnline]); // Add isOnline to dependencies
+    return () => unsubscribe();
+  }, [user?.uid, partner?.uid, isOnline]);
 
   const handleAddNote = async (resultId) => {
     if (!note.trim() || !isOnline || !partner?.uid || !user?.email || !partner?.email) return;
@@ -188,7 +168,7 @@ const Results = () => {
 
   const getRandomSuggestions = (result) => {
     const suggestions = result.matched
-      ? SUGGESTIONS.matched[result.responses[user.uid].response]
+      ? SUGGESTIONS.matched[result.responses[user.uid].response ? 'agree' : 'disagree']
       : SUGGESTIONS.mismatched;
     return suggestions.slice(0, 2);
   };
@@ -356,16 +336,16 @@ const Results = () => {
                           Your Response
                         </p>
                         <p className={`text-lg font-medium flex items-center mt-2 ${
-                          userResponse === 'agree'
+                          userResponse
                             ? 'text-green-600 dark:text-green-400'
                             : 'text-red-600 dark:text-red-400'
                         }`}>
-                          {userResponse === 'agree' ? (
+                          {userResponse ? (
                             <CheckCircleIcon className="h-6 w-6 mr-2 animate-bounce-in" />
                           ) : (
                             <XCircleIcon className="h-6 w-6 mr-2 animate-bounce-in" />
                           )}
-                          {userResponse ? userResponse.charAt(0).toUpperCase() + userResponse.slice(1) : 'No response'}
+                          {userResponse ? 'Yes' : 'No'}
                         </p>
                         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                           {result.responses[user.uid]?.timestamp ? formatDate(result.responses[user.uid].timestamp) : ''}
@@ -377,16 +357,16 @@ const Results = () => {
                           {partner.displayName || 'Partner'}'s Response
                         </p>
                         <p className={`text-lg font-medium flex items-center mt-2 ${
-                          partnerResponse === 'agree'
+                          partnerResponse
                             ? 'text-green-600 dark:text-green-400'
                             : 'text-red-600 dark:text-red-400'
                         }`}>
-                          {partnerResponse === 'agree' ? (
+                          {partnerResponse ? (
                             <CheckCircleIcon className="h-6 w-6 mr-2 animate-bounce-in" />
                           ) : (
                             <XCircleIcon className="h-6 w-6 mr-2 animate-bounce-in" />
                           )}
-                          {partnerResponse ? partnerResponse.charAt(0).toUpperCase() + partnerResponse.slice(1) : 'No response'}
+                          {partnerResponse ? 'Yes' : 'No'}
                         </p>
                         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                           {result.responses[partner.uid]?.timestamp ? formatDate(result.responses[partner.uid].timestamp) : ''}
