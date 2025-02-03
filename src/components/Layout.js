@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { ref, onValue, get } from 'firebase/database';
 import { rtdb } from '../firebase/config';
+import { cookieManager } from '../utils/cookieManager';
 import FloatingNav from './FloatingNav';
 import Navigation from './Navigation';
 
@@ -15,60 +16,82 @@ const Layout = ({ children }) => {
   // Don't show navigation on login page
   const showNav = user && !isLoginPage;
 
-  // Initialize theme
   useEffect(() => {
     // Initialize theme from Firebase or localStorage
     const initializeTheme = async () => {
-      // First check localStorage or system preference regardless of user state
+      // First check cookies (highest priority)
+      const cookieTheme = cookieManager.getTheme();
+      
+      // Then check localStorage
       const storedTheme = localStorage.getItem('theme');
+      
+      // Finally check system preference
+      const systemPreference = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      
+      // Determine which theme to use (priority: cookie > localStorage > Firebase > system)
+      let themeToApply = systemPreference;
+      
       if (storedTheme) {
-        document.documentElement.classList.toggle('dark', storedTheme === 'dark');
-      } else {
-        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        document.documentElement.classList.toggle('dark', isDark);
+        themeToApply = storedTheme;
+      }
+      
+      if (cookieTheme) {
+        themeToApply = cookieTheme;
       }
 
-      // If no user, don't proceed with Firebase operations
-      if (!user?.uid) return;
-
-      try {
-        // Get theme from Firebase
-        const themeRef = ref(rtdb, `userSettings/${user.uid}/theme`);
-        const snapshot = await get(themeRef);
-        const data = snapshot.val();
-        
-        if (data?.preference) {
-          if (data.preference === 'system') {
-            const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            document.documentElement.classList.toggle('dark', isDark);
-            localStorage.removeItem('theme');
-          } else {
-            document.documentElement.classList.toggle('dark', data.preference === 'dark');
-            localStorage.setItem('theme', data.preference);
+      // If user is logged in, try to get theme from Firebase
+      if (user?.uid) {
+        try {
+          const themeRef = ref(rtdb, `userSettings/${user.uid}/theme`);
+          const snapshot = await get(themeRef);
+          const data = snapshot.val();
+          
+          if (data?.preference) {
+            themeToApply = data.preference;
           }
+        } catch (error) {
+          console.error('Error fetching theme from Firebase:', error);
         }
-      } catch (error) {
-        console.error('Error fetching theme from Firebase:', error);
       }
+
+      // Apply the theme
+      applyTheme(themeToApply);
+    };
+
+    // Helper function to apply theme
+    const applyTheme = (theme) => {
+      const root = document.documentElement;
+      const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const shouldBeDark = theme === 'dark' || (theme === 'system' && isSystemDark);
+
+      // Remove existing theme classes
+      root.classList.remove('light', 'dark');
+      root.removeAttribute('data-theme');
+      
+      // Apply new theme
+      if (theme === 'system') {
+        root.setAttribute('data-theme', 'system');
+        root.classList.add(shouldBeDark ? 'dark' : 'light');
+      } else {
+        root.setAttribute('data-theme', theme);
+        root.classList.add(theme);
+      }
+
+      // Store in both localStorage and cookies
+      localStorage.setItem('theme', theme);
+      cookieManager.saveTheme(theme);
     };
 
     initializeTheme();
 
-    // Only set up Firebase listener if user exists
+    // Set up Firebase listener for theme changes
     let unsubscribe;
     if (user?.uid) {
       const themeRef = ref(rtdb, `userSettings/${user.uid}/theme`);
       unsubscribe = onValue(themeRef, (snapshot) => {
         const data = snapshot.val();
         if (data?.preference) {
-          if (data.preference === 'system') {
-            const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            document.documentElement.classList.toggle('dark', isDark);
-            localStorage.removeItem('theme');
-          } else {
-            document.documentElement.classList.toggle('dark', data.preference === 'dark');
-            localStorage.setItem('theme', data.preference);
-          }
+          applyTheme(data.preference);
         }
       });
     }
@@ -76,9 +99,9 @@ const Layout = ({ children }) => {
     // Listen for system theme changes
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleSystemThemeChange = (e) => {
-      const storedTheme = localStorage.getItem('theme');
-      if (!storedTheme) {
-        document.documentElement.classList.toggle('dark', e.matches);
+      const currentTheme = localStorage.getItem('theme') || 'system';
+      if (currentTheme === 'system') {
+        applyTheme('system');
       }
     };
 
@@ -88,7 +111,7 @@ const Layout = ({ children }) => {
       if (unsubscribe) unsubscribe();
       mediaQuery.removeEventListener('change', handleSystemThemeChange);
     };
-  }, [user?.uid]);
+  }, [user]);
 
   return (
     <div className="h-screen overflow-hidden bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200">

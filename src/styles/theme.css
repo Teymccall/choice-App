@@ -1,5 +1,5 @@
 :root {
-  --transition-duration: 0.3s;
+  --transition-duration: 0.15s;
   
   /* Light theme variables */
   --bg-primary: #ffffff;
@@ -12,13 +12,13 @@
   --hover-bg: #f3f4f6;
   --login-bg: #f0f9ff;
   --login-card-bg: #ffffff;
-  --chat-bg: #111827;
-  --chat-message-bg: #f3f4f6;
+  --chat-bg: #f3f4f6;
+  --chat-message-bg: #ffffff;
   --chat-message-text: #000000;
   --chat-time: #8696a0;
   --chat-sender: #374151;
-  --nav-bg-light: #0284c7;
-  --nav-text-light: #ffffff;
+  --nav-bg: #ffffff;
+  --nav-text: #000000;
   --chat-message-sent-bg: #dcf8c6;
   --chat-message-received-bg: #ffffff;
   --chat-message-sent-text: #000000;
@@ -26,43 +26,121 @@
   --chat-media-overlay: rgba(0, 0, 0, 0.3);
   --chat-tick-gray: #8696a0;
   --chat-tick-blue: #53bdeb;
-  --chat-input-bg: #2a2b2e;
 }
 
 /* Dark theme variables */
-.dark {
-  --bg-primary: #1a1b1e;
-  --bg-secondary: #2a2b2e;
+:root[data-theme='dark'],
+.dark,
+html[data-theme='dark'],
+html.dark {
+  --bg-primary: #000000;
+  --bg-secondary: #000000;
   --text-primary: #ffffff;
-  --text-secondary: #d1d5db;
-  --border-color: #3a3b3e;
-  --input-bg: #2a2b2e;
-  --card-bg: #2a2b2e;
-  --hover-bg: #3a3b3e;
-  --login-bg: #111827;
-  --login-card-bg: #1f2937;
-  --chat-bg: #111827;
-  --chat-message-bg: #1f2937;
-  --chat-message-text: #e5e7eb;
-  --chat-time: #8696a0;
-  --chat-sender: #d1d5db;
-  --nav-bg-dark: #1f2937;
-  --nav-text-dark: #ffffff;
-  --chat-message-sent-bg: #202c33;
-  --chat-message-received-bg: #1f2937;
-  --chat-message-sent-text: #e4e6eb;
-  --chat-message-received-text: #e4e6eb;
-  --chat-media-overlay: rgba(0, 0, 0, 0.6);
-  --chat-tick-gray: #8696a0;
-  --chat-tick-blue: #53bdeb;
+  --text-secondary: #a3a3a3;
+  --border-color: #333333;
+  --input-bg: #000000;
+  --card-bg: #000000;
+  --hover-bg: #1a1a1a;
+  --login-bg: #000000;
+  --login-card-bg: #000000;
+  --chat-bg: #000000;
+  --chat-message-bg: #000000;
+  --chat-message-text: #ffffff;
+  --chat-time: #737373;
+  --chat-sender: #a3a3a3;
+  --nav-bg: #000000;
+  --nav-text: #ffffff;
+  --chat-message-sent-bg: #000000;
+  --chat-message-received-bg: #000000;
+  --chat-message-sent-text: #ffffff;
+  --chat-message-received-text: #ffffff;
+  --chat-media-overlay: rgba(0, 0, 0, 0.7);
+  --chat-tick-gray: #737373;
+  --chat-tick-blue: #ffffff;
+}
+
+/* System dark mode */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'],
+  html[data-theme='system'] {
+    --bg-primary: #000000;
+    --bg-secondary: #111111;
+    --text-primary: #ffffff;
+    --text-secondary: #a3a3a3;
+    --border-color: #262626;
+    --input-bg: #111111;
+    --card-bg: #111111;
+    --hover-bg: #1a1a1a;
+    --login-bg: #000000;
+    --login-card-bg: #111111;
+    --chat-bg: #000000;
+    --chat-message-bg: #111111;
+    --chat-message-text: #ffffff;
+    --chat-time: #737373;
+    --chat-sender: #a3a3a3;
+    --nav-bg: #111111;
+    --nav-text: #ffffff;
+    --chat-message-sent-bg: #005c4b;
+    --chat-message-received-bg: #111111;
+    --chat-message-sent-text: #ffffff;
+    --chat-message-received-text: #ffffff;
+    --chat-media-overlay: rgba(0, 0, 0, 0.7);
+    --chat-tick-gray: #737373;
+    --chat-tick-blue: #60a5fa;
+  }
+}
+
+/* Base transitions */
+* {
+  transition: background-color var(--transition-duration) ease-in-out,
+              border-color var(--transition-duration) ease-in-out,
+              color var(--transition-duration) ease-in-out;
 }
 
 /* Global styles */
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
-  transition: background-color var(--transition-duration) ease,
-              color var(--transition-duration) ease;
+  min-height: 100vh;
+}
+
+/* Theme-specific styles */
+.bg-white {
+  background-color: var(--card-bg) !important;
+}
+
+.text-gray-900 {
+  color: var(--text-primary) !important;
+}
+
+.text-gray-700,
+.text-gray-600 {
+  color: var(--text-secondary) !important;
+}
+
+.border-gray-200,
+.border-gray-300 {
+  border-color: var(--border-color) !important;
+}
+
+/* Input styles */
+input,
+select,
+textarea {
+  background-color: var(--input-bg) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Message styles */
+.message-sent {
+  background-color: var(--chat-message-sent-bg) !important;
+  color: var(--chat-message-sent-text) !important;
+}
+
+.message-received {
+  background-color: var(--chat-message-received-bg) !important;
+  color: var(--chat-message-received-text) !important;
 }
 
 /* Chat styles */
@@ -137,12 +215,6 @@ body {
   background-color: var(--hover-bg);
 }
 
-/* Card styles */
-.bg-white,
-.dark .bg-white {
-  background-color: var(--card-bg) !important;
-}
-
 /* Text styles */
 .text-gray-700,
 .dark .text-gray-700 {
@@ -164,66 +236,21 @@ p, span, div,
   color: var(--text-primary);
 }
 
-/* Border styles */
-.border-gray-200,
-.dark .border-gray-200 {
-  border-color: var(--border-color) !important;
-}
-
-/* Input styles */
-input, select, textarea {
-  background-color: var(--input-bg) !important;
-  color: var(--text-primary) !important;
-  border-color: var(--border-color) !important;
-}
-
-input::placeholder {
-  color: var(--text-secondary) !important;
-  opacity: 0.7;
-}
-
-.dark input::placeholder {
-  color: var(--text-secondary) !important;
-  opacity: 0.7;
-}
-
-input:disabled {
-  background-color: var(--bg-secondary) !important;
-  opacity: 0.7;
-}
-
-/* Button styles */
-button:not(.bg-primary-600):not(.bg-red-500) {
-  background-color: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-/* List styles */
-.list-item:hover {
-  background-color: var(--hover-bg);
-}
-
 /* Shadow adjustments */
 .dark .shadow {
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
-}
-
-/* Transition for all theme changes */
-* {
-  transition: background-color var(--transition-duration) ease,
-              border-color var(--transition-duration) ease,
-              color var(--transition-duration) ease,
-              box-shadow var(--transition-duration) ease;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
 }
 
 /* Additional dark mode overrides */
 .dark .bg-gray-50,
-.dark .bg-gray-100 {
+.dark .bg-gray-100,
+.dark .bg-gray-200 {
   background-color: var(--bg-secondary) !important;
 }
 
 .dark .hover\:bg-gray-50:hover,
-.dark .hover\:bg-gray-100:hover {
+.dark .hover\:bg-gray-100:hover,
+.dark .hover\:bg-gray-200:hover {
   background-color: var(--hover-bg) !important;
 }
 
@@ -284,8 +311,8 @@ button:not(.bg-primary-600):not(.bg-red-500) {
 
 /* Navigation styles */
 .floating-nav {
-  background-color: var(--nav-bg-light);
-  color: var(--nav-text-light);
+  background-color: var(--nav-bg);
+  color: var(--nav-text);
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
   position: fixed;
   bottom: 0;
@@ -297,14 +324,14 @@ button:not(.bg-primary-600):not(.bg-red-500) {
 .floating-nav button,
 .floating-nav a,
 .floating-nav .nav-item {
-  color: var(--nav-text-light) !important;
-  background-color: var(--nav-bg-light) !important;
+  color: var(--nav-text) !important;
+  background-color: var(--nav-bg) !important;
   border: none !important;
 }
 
 .floating-nav .nav-icon,
 .floating-nav .nav-text {
-  color: var(--nav-text-light) !important;
+  color: var(--nav-text) !important;
 }
 
 .floating-nav button:hover,
@@ -314,20 +341,20 @@ button:not(.bg-primary-600):not(.bg-red-500) {
 }
 
 .dark .floating-nav {
-  background-color: var(--nav-bg-dark);
-  color: var(--nav-text-dark);
+  background-color: var(--nav-bg);
+  color: var(--nav-text);
 }
 
 .dark .floating-nav button,
 .dark .floating-nav a,
 .dark .floating-nav .nav-item {
-  color: var(--nav-text-dark) !important;
-  background-color: var(--nav-bg-dark) !important;
+  color: var(--nav-text) !important;
+  background-color: var(--nav-bg) !important;
 }
 
 .dark .floating-nav .nav-icon,
 .dark .floating-nav .nav-text {
-  color: var(--nav-text-dark) !important;
+  color: var(--nav-text) !important;
 }
 
 .dark .floating-nav button:hover,
@@ -342,37 +369,6 @@ button:not(.bg-primary-600):not(.bg-red-500) {
   position: relative;
   display: flex;
   flex-direction: column;
-}
-
-.message-sent {
-  background-color: var(--chat-message-sent-bg);
-  color: var(--chat-message-sent-text);
-  border-radius: 12px 0 12px 12px;
-  padding: 8px 12px;
-  max-width: 80%;
-  margin-left: auto;
-  margin-bottom: 2px;
-  position: relative;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-.message-received {
-  background-color: var(--chat-message-received-bg);
-  color: var(--chat-message-received-text);
-  border-radius: 0 12px 12px 12px;
-  padding: 8px 12px;
-  max-width: 80%;
-  margin-right: auto;
-  margin-bottom: 2px;
-  position: relative;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-.message-text {
-  font-size: 0.9375rem;
-  line-height: 1.25rem;
-  margin-right: 24px;
-  word-break: break-word;
 }
 
 .message-info {
@@ -485,4 +481,379 @@ html.dark .media-container {
 
 html.dark .media-download-btn {
   background-color: var(--chat-media-overlay);
-} 
+}
+
+/* Ensure dark mode styles are applied */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    color-scheme: dark;
+  }
+}
+
+/* Dark mode class overrides */
+:root[class~="dark"] body,
+html.dark body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+:root[class~="dark"] .bg-white,
+html.dark .bg-white {
+  background-color: var(--card-bg) !important;
+}
+
+:root[class~="dark"] .text-gray-700,
+html.dark .text-gray-700 {
+  color: var(--text-primary) !important;
+}
+
+/* Add these important overrides */
+html.dark .message-sent,
+:root[class~="dark"] .message-sent {
+  background-color: var(--chat-message-sent-bg) !important;
+  color: var(--chat-message-sent-text) !important;
+}
+
+html.dark .message-received,
+:root[class~="dark"] .message-received {
+  background-color: var(--chat-message-received-bg) !important;
+  color: var(--chat-message-received-text) !important;
+}
+
+/* Ensure dark mode is properly applied to the root element */
+:root[class~="dark"],
+html.dark {
+  background-color: var(--bg-primary);
+  color-scheme: dark;
+}
+
+/* Dark mode specific overrides */
+html.dark body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+html.dark .bg-white {
+  background-color: var(--card-bg) !important;
+}
+
+html.dark .bg-gray-50,
+html.dark .bg-gray-100,
+html.dark .bg-gray-200 {
+  background-color: var(--bg-secondary) !important;
+}
+
+html.dark .text-gray-900 {
+  color: var(--text-primary) !important;
+}
+
+html.dark .text-gray-700,
+html.dark .text-gray-600 {
+  color: var(--text-secondary) !important;
+}
+
+html.dark .border-gray-200,
+html.dark .border-gray-300 {
+  border-color: var(--border-color) !important;
+}
+
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: var(--input-bg) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+html.dark .shadow-sm {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+html.dark .shadow {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* Ensure dark mode is applied for system preference when in system mode */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"],
+  html[data-theme="system"] {
+    --bg-primary: #000000;
+    --bg-secondary: #111111;
+    --text-primary: #ffffff;
+    --text-secondary: #a3a3a3;
+    --border-color: #262626;
+    --input-bg: #111111;
+    --card-bg: #111111;
+    --hover-bg: #1a1a1a;
+    --login-bg: #000000;
+    --login-card-bg: #111111;
+    --chat-bg: #000000;
+    --chat-message-bg: #111111;
+    --chat-message-text: #ffffff;
+    --chat-time: #737373;
+    --chat-sender: #a3a3a3;
+    --nav-bg: #111111;
+    --nav-text: #ffffff;
+    --chat-message-sent-bg: #005c4b;
+    --chat-message-received-bg: #111111;
+    --chat-message-sent-text: #ffffff;
+    --chat-message-received-text: #ffffff;
+    --chat-media-overlay: rgba(0, 0, 0, 0.7);
+    --chat-tick-gray: #737373;
+    --chat-tick-blue: #60a5fa;
+  }
+}
+
+/* Force immediate transition when switching themes */
+* {
+  transition: background-color 0.15s ease-in-out,
+              border-color 0.15s ease-in-out,
+              color 0.15s ease-in-out;
+}
+
+/* Ensure dark mode styles are applied regardless of selector used */
+:root[class~="dark"] body,
+.dark body,
+html[class~="dark"] body,
+html.dark body,
+[data-theme="dark"] body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Add important flags to critical dark mode styles */
+:root[class~="dark"] .bg-white,
+.dark .bg-white,
+html[class~="dark"] .bg-white,
+html.dark .bg-white,
+[data-theme="dark"] .bg-white {
+  background-color: var(--card-bg) !important;
+}
+
+:root[class~="dark"] .text-gray-900,
+.dark .text-gray-900,
+html[class~="dark"] .text-gray-900,
+html.dark .text-gray-900,
+[data-theme="dark"] .text-gray-900 {
+  color: var(--text-primary) !important;
+}
+
+/* Message specific dark mode styles */
+:root[class~="dark"] .message-sent,
+.dark .message-sent,
+html[class~="dark"] .message-sent,
+html.dark .message-sent,
+[data-theme="dark"] .message-sent {
+  background-color: var(--chat-message-sent-bg) !important;
+  color: var(--chat-message-sent-text) !important;
+}
+
+:root[class~="dark"] .message-received,
+.dark .message-received,
+html[class~="dark"] .message-received,
+html.dark .message-received,
+[data-theme="dark"] .message-received {
+  background-color: var(--chat-message-received-bg) !important;
+  color: var(--chat-message-received-text) !important;
+}
+
+/* Theme buttons styles */
+.theme-buttons-container {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  padding: 0.5rem;
+  width: 100%;
+}
+
+.theme-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  border: 2px solid transparent;
+  transition: all 0.2s ease;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.theme-button.active {
+  border-color: #404040;
+  background-color: #000000;
+}
+
+.theme-button:hover:not(.active) {
+  background-color: var(--hover-bg);
+}
+
+/* Settings card styles */
+.settings-card {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.settings-card h2 {
+  color: var(--text-primary);
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Make sure all settings cards have consistent styling */
+.dark .settings-card {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+/* Ensure full page coverage */
+html, body {
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* Settings page specific styles */
+.settings-container {
+  min-height: 100vh;
+  background-color: var(--bg-primary);
+  padding: 1rem;
+}
+
+/* Dark mode specific overrides */
+.dark .bg-gray-800,
+.dark .bg-white {
+  background-color: var(--card-bg) !important;
+}
+
+/* Ensure switches have proper dark mode colors */
+.dark .bg-blue-600 {
+  background-color: #404040 !important;
+}
+
+.dark .bg-gray-200 {
+  background-color: #262626 !important;
+}
+
+/* Ensure inputs have proper dark mode styling */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: var(--input-bg) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Ensure dark mode styles are applied */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    color-scheme: dark;
+  }
+}
+
+/* Force dark mode styles */
+:root[class~="dark"] body,
+html.dark body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Additional dark mode overrides */
+.dark .bg-gray-50,
+.dark .bg-gray-100,
+.dark .bg-gray-200 {
+  background-color: var(--bg-secondary) !important;
+}
+
+.dark .text-gray-900,
+.dark .text-gray-800,
+.dark .text-gray-700 {
+  color: var(--text-primary) !important;
+}
+
+.dark .text-gray-600,
+.dark .text-gray-500 {
+  color: var(--text-secondary) !important;
+}
+
+.dark .border-gray-200,
+.dark .border-gray-300 {
+  border-color: var(--border-color) !important;
+}
+
+/* Dark mode overrides */
+.dark .bg-primary-500,
+.dark .bg-primary-600,
+.dark .bg-primary-700 {
+  background-color: #000000 !important;
+}
+
+.dark .text-primary-500,
+.dark .text-primary-600,
+.dark .text-primary-700 {
+  color: #ffffff !important;
+}
+
+.dark .border-primary-500,
+.dark .border-primary-600,
+.dark .border-primary-700 {
+  border-color: #333333 !important;
+}
+
+.dark .ring-primary-500 {
+  --tw-ring-color: #000000 !important;
+}
+
+.dark .hover\:bg-primary-600:hover,
+.dark .hover\:bg-primary-700:hover {
+  background-color: #1a1a1a !important;
+}
+
+/* Results page specific dark mode styles */
+.dark .result-card {
+  background-color: #000000;
+  border-color: #333333;
+}
+
+.dark .result-card:hover {
+  background-color: #1a1a1a;
+}
+
+.dark .status-badge {
+  background-color: #000000;
+  border-color: #333333;
+}
+
+.dark .chart-container {
+  background-color: #000000;
+  border-color: #333333;
+}
+
+/* Ensure all primary colors are black in dark mode */
+.dark .primary-bg {
+  background-color: #000000 !important;
+}
+
+.dark .primary-text {
+  color: #ffffff !important;
+}
+
+.dark .primary-border {
+  border-color: #333333 !important;
+}
+
+/* Override any remaining blue colors */
+.dark [class*="text-blue-"],
+.dark [class*="bg-blue-"],
+.dark [class*="border-blue-"] {
+  color: #ffffff !important;
+  background-color: #000000 !important;
+  border-color: #333333 !important;
+}

@@ -6,7 +6,6 @@ import { requestNotificationPermission, onMessageListener, initializeMessaging }
 
 const NotificationHandler = () => {
   const { user } = useAuth();
-  const [notification, setNotification] = useState(null);
   const [isSetup, setIsSetup] = useState(false);
 
   useEffect(() => {
@@ -20,60 +19,56 @@ const NotificationHandler = () => {
           return;
         }
 
-        // Step 2: Initialize messaging
-        console.log('Step 1: Initializing messaging...');
+        // Step 2: Wait for service worker registration
+        const swRegistration = await navigator.serviceWorker.ready;
+        console.log('Service Worker is ready:', swRegistration);
+
+        // Step 3: Initialize messaging
+        console.log('Initializing messaging...');
         const isInitialized = await initializeMessaging();
         if (!isInitialized) {
           console.log('Messaging not supported in this environment - skipping setup');
           return;
         }
 
-        // Step 3: Request permission and get token only if permission is granted
-        console.log('Step 2: Requesting notification permission...');
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          console.log('Notification permission not granted');
+        // Step 4: Request permission and get token only if permission is granted
+        console.log('Requesting notification permission...');
+        try {
+          const token = await requestNotificationPermission();
+          if (!token) {
+            console.log('No FCM token available');
+            return;
+          }
+          console.log('FCM token obtained successfully');
+        } catch (error) {
+          console.error('Error getting FCM token:', error);
+          if (error.code === 'messaging/token-subscribe-failed') {
+            console.error('Token subscription failed. Please check Firebase configuration and credentials.');
+          }
           return;
         }
 
-        // Step 4: Get FCM token
-        console.log('Step 3: Getting FCM token...');
-        const token = await requestNotificationPermission();
-        if (!token) {
-          console.log('No FCM token available');
-          return;
-        }
-
-        // Step 5: Store token in database
-        console.log('Step 4: Storing token in database...');
-        const userRef = ref(rtdb, `users/${user.uid}/fcmTokens/${token}`);
-        await update(userRef, {
-          token,
-          lastUpdated: Date.now(),
-          device: navigator.userAgent,
-          platform: navigator.platform
-        });
-
-        // Step 6: Verify token storage
-        const tokenRef = ref(rtdb, `users/${user.uid}/fcmTokens`);
-        const unsubscribe = onValue(tokenRef, (snapshot) => {
-          const tokens = snapshot.val();
-          if (tokens && tokens[token]) {
-            console.log('Token successfully stored in database');
-            setIsSetup(true);
-
-            // Send test notification only if we haven't set up yet
-            if (!isSetup && Notification.permission === 'granted') {
-              new Notification('Notifications Enabled', {
-                body: 'You will now receive notifications from Choice App',
-                icon: '/logo192.png'
+        // Step 5: Set up message listener for foreground messages
+        onMessageListener()
+          .then(payload => {
+            console.log('Received foreground message:', payload);
+            // Show notification even when app is in foreground
+            if (Notification.permission === 'granted') {
+              new Notification(payload.notification?.title || 'New Message', {
+                body: payload.notification?.body || '',
+                icon: '/choice.png',
+                badge: '/choice.png',
+                tag: payload.data?.type || 'default',
+                data: payload.data
               });
             }
-          }
-        });
+          })
+          .catch(err => console.error('Error setting up message listener:', err));
 
-        // Cleanup subscription
-        return () => unsubscribe();
+        // Step 6: Mark setup as complete
+        setIsSetup(true);
+        console.log('Notification setup completed successfully');
+
       } catch (error) {
         console.error('Error in notification setup:', error);
         // Don't throw the error, just log it
@@ -82,16 +77,6 @@ const NotificationHandler = () => {
 
     setupNotifications();
   }, [user, isSetup]);
-
-  useEffect(() => {
-    if (notification) {
-      console.log('New notification state:', notification);
-    }
-  }, [notification]);
-
-  useEffect(() => {
-    console.log('Notification setup status:', isSetup ? 'Complete' : 'Pending/Failed');
-  }, [isSetup]);
 
   return null;
 };

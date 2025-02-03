@@ -849,13 +849,7 @@ export const AuthProvider = ({ children }) => {
       const partnerId = partner.uid;
       const partnerName = partner.displayName || 'Your partner';
 
-      // Immediately update local state to show disconnection
-      setPartner(null);
-      setActiveInviteCode(null);
-      setError(null);
-      setDisconnectMessage(`You have disconnected from ${partnerName}`);
-
-      // First, update Firestore documents
+      // First, update Firestore documents atomically
       const batch = writeBatch(db);
       const userRef = doc(db, 'users', user.uid);
       const partnerRef = doc(db, 'users', partnerId);
@@ -872,27 +866,31 @@ export const AuthProvider = ({ children }) => {
         lastUpdated: Timestamp.now()
       });
 
-      await batch.commit();
+      // Clean up RTDB connections first
+      const userConnectionRef = ref(rtdb, `connections/${user.uid}`);
+      const partnerConnectionRef = ref(rtdb, `connections/${partnerId}`);
+      
+      // Update presence data
+      const userPresenceRef = ref(rtdb, `presence/${user.uid}`);
+      const partnerPresenceRef = ref(rtdb, `presence/${partnerId}`);
 
-      // Then, handle RTDB updates one at a time
-      try {
-        // First remove user's connection
-        const userConnectionRef = ref(rtdb, `connections/${user.uid}`);
-        await remove(userConnectionRef);
-      } catch (err) {
-        console.warn('Error removing user connection:', err);
-      }
+      // Execute all updates in parallel
+      await Promise.all([
+        remove(userConnectionRef),
+        remove(partnerConnectionRef),
+        update(userPresenceRef, {
+          isOnline: true,
+          lastOnline: serverTimestamp(),
+          connectionId: Date.now().toString()
+        }),
+        update(partnerPresenceRef, {
+          lastOnline: serverTimestamp()
+        }),
+        batch.commit()
+      ]);
 
+      // Send notification to partner about disconnection
       try {
-        // Then try to remove partner's connection
-        const partnerConnectionRef = ref(rtdb, `connections/${partnerId}`);
-        await remove(partnerConnectionRef);
-      } catch (err) {
-        console.warn('Error removing partner connection:', err);
-      }
-
-      try {
-        // Send notification to partner about disconnection
         const notificationRef = ref(rtdb, `notifications/${partnerId}`);
         await update(notificationRef, {
           [Date.now()]: {
@@ -905,19 +903,14 @@ export const AuthProvider = ({ children }) => {
         console.warn('Error sending disconnect notification:', err);
       }
 
-      // Clean up presence data
-      try {
-        const userPresenceRef = ref(rtdb, `presence/${user.uid}`);
-        await update(userPresenceRef, {
-          isOnline: true,
-          lastOnline: serverTimestamp()
-        });
-      } catch (err) {
-        console.warn('Error updating presence:', err);
-      }
-
-      // Force a cleanup of all listeners to ensure fresh state
+      // Force cleanup of all listeners
       await cleanupDatabaseListeners();
+
+      // Update local state last
+      setPartner(null);
+      setActiveInviteCode(null);
+      setError(null);
+      setDisconnectMessage(`You have disconnected from ${partnerName}`);
 
     } catch (err) {
       console.error('Error disconnecting partner:', err);

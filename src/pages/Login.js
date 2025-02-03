@@ -80,48 +80,14 @@ export default function Login() {
         try {
           const userCredential = await signInWithEmailAndPassword(auth, email, password);
           if (userCredential.user) {
-            // Check database connection
-            const connectedRef = ref(rtdb, '.info/connected');
-            await new Promise((resolve, reject) => {
-              let resolved = false;
-              let cleanup = null;
-
-              // Setup timeout
-              const timeoutId = setTimeout(() => {
-                if (!resolved) {
-                  resolved = true;
-                  if (cleanup) cleanup();
-                  reject(new Error('Connection timeout'));
-                }
-              }, 10000);
-
-              // Setup listener
-              cleanup = onValue(connectedRef, 
-                (snap) => {
-                if (!resolved) {
-                  resolved = true;
-                    clearTimeout(timeoutId);
-                    cleanup();
-                if (snap.val() === true) {
-                  resolve();
-                } else {
-                  reject(new Error('No connection to database'));
-                  }
-                }
-                },
-                (error) => {
-                if (!resolved) {
-                  resolved = true;
-                    clearTimeout(timeoutId);
-                    cleanup();
-                  reject(error);
-                }
-                }
-              );
-            });
-
-            cookieManager.saveAuthState(email, rememberMe);
-            cookieManager.recordLastLogin(email);
+            // Save credentials if remember me is checked
+            if (rememberMe) {
+              cookieManager.saveAuthState(email, true);
+              cookieManager.recordLastLogin(email);
+            } else {
+              cookieManager.clearAuthState();
+            }
+            
             navigate('/dashboard');
             return;
           }
@@ -368,17 +334,25 @@ export default function Login() {
                   name="remember-me"
                   type="checkbox"
                   checked={rememberMe}
-                  onChange={handleRememberMeChange}
-                className="login-input h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  onChange={(e) => {
+                    setRememberMe(e.target.checked);
+                    if (!e.target.checked) {
+                      cookieManager.clearAuthState();
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-black"
                 />
-              <label htmlFor="remember-me" className="login-text ml-2 block text-sm">
+                <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                   Remember me
                 </label>
               </div>
 
             <div className="text-sm">
-              <Link to="/forgot-password" className="login-link font-medium">
-                  Forgot password?
+              <Link 
+                to="/forgot-password" 
+                className="font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
+              >
+                Forgot password?
               </Link>
             </div>
             </div>

@@ -147,48 +147,54 @@ const ConnectPartner = () => {
 
   if (partner) {
     return (
-      <div className="bg-white p-6 rounded-lg shadow-md animate-fade-in">
-        <div className="flex items-center justify-center space-x-4">
-          <div className="text-center">
-            <UserGroupIcon className="h-8 w-8 text-primary-600 mx-auto" />
-            <p className="mt-2 font-medium text-gray-900">{user.displayName}</p>
-          </div>
-          <div className="flex items-center">
-            <div className="h-0.5 w-12 bg-primary-600"></div>
-            <CheckCircleIcon className="h-8 w-8 text-green-500 mx-2 animate-bounce" />
-            <div className="h-0.5 w-12 bg-primary-600"></div>
-          </div>
-          <div className="text-center">
-            <UserGroupIcon className="h-8 w-8 text-primary-600 mx-auto" />
-            <p className="mt-2 font-medium text-gray-900">{partner.displayName}</p>
-          </div>
-        </div>
-        <p className="mt-4 text-center text-sm text-gray-600">
-          You are connected with your partner!
-        </p>
-        {error && (
-          <div className="mt-4 flex items-center justify-center text-red-500 text-sm animate-shake">
-            <XCircleIcon className="h-5 w-5 mr-1.5" />
-            {error}
-          </div>
-        )}
-        <button
-          onClick={handleDisconnect}
-          disabled={isLoading}
-          className="mt-4 w-full flex items-center justify-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isLoading ? (
-            <div className="flex items-center">
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-700"></div>
-              <span className="ml-2">Disconnecting...</span>
+      <div className="bg-white dark:bg-black p-4 sm:p-6 rounded-lg shadow-md animate-fade-in">
+        <div className="flex flex-col items-center">
+          <div className="flex items-center justify-center w-full max-w-[300px] space-x-3">
+            <div className="text-center flex-1 min-w-0">
+              <UserGroupIcon className="h-7 w-7 text-black dark:text-white mx-auto" />
+              <p className="mt-1.5 font-medium text-gray-900 dark:text-white text-sm truncate px-1">
+                {user.displayName}
+              </p>
             </div>
-          ) : (
-            <>
+            <div className="flex items-center flex-shrink-0 px-2">
+              <div className="h-0.5 w-8 bg-black dark:bg-white"></div>
+              <CheckCircleIcon className="h-6 w-6 text-green-500 mx-1.5 animate-bounce" />
+              <div className="h-0.5 w-8 bg-black dark:bg-white"></div>
+            </div>
+            <div className="text-center flex-1 min-w-0">
+              <UserGroupIcon className="h-7 w-7 text-black dark:text-white mx-auto" />
+              <p className="mt-1.5 font-medium text-gray-900 dark:text-white text-sm truncate px-1">
+                {partner.displayName}
+              </p>
+            </div>
+          </div>
+          <p className="mt-3 text-center text-sm text-gray-600 dark:text-gray-400">
+            You are connected with your partner!
+          </p>
+          {error && (
+            <div className="mt-3 flex items-center justify-center text-red-500 text-sm animate-shake">
               <XCircleIcon className="h-5 w-5 mr-1.5" />
-              Disconnect Partnership
-            </>
+              {error}
+            </div>
           )}
-        </button>
+          <button
+            onClick={handleDisconnect}
+            disabled={isLoading}
+            className="mt-3 w-full max-w-[300px] flex items-center justify-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-red-900 dark:text-red-200 dark:border-red-800 dark:hover:bg-red-800"
+          >
+            {isLoading ? (
+              <div className="flex items-center">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-700 dark:border-red-200"></div>
+                <span className="ml-2">Disconnecting...</span>
+              </div>
+            ) : (
+              <>
+                <XCircleIcon className="h-5 w-5 mr-1.5" />
+                Disconnect Partnership
+              </>
+            )}
+          </button>
+        </div>
       </div>
     );
   }

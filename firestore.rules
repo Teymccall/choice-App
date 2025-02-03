@@ -1,0 +1,146 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isPartner(userId) {
+      let userDoc = get(/databases/$(database)/documents/users/$(userId));
+      return userDoc.data.partnerId == request.auth.uid;
+    }
+
+    function hasValidPartner() {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      let partnerDoc = get(/databases/$(database)/documents/users/$(userDoc.data.partnerId));
+      return userDoc.data.partnerId != null && 
+             partnerDoc != null && 
+             (partnerDoc.data.partnerId == request.auth.uid || 
+              userDoc.data.inviteCodes.hasAny([partnerDoc.id]));
+    }
+
+    function hasValidInviteCode(userId) {
+      let userDoc = get(/databases/$(database)/documents/users/$(userId));
+      return userDoc.data.inviteCodes != null && 
+             userDoc.data.inviteCodes.size() > 0;
+    }
+
+    function hasTopicAccess(topicId) {
+      let topicDoc = get(/databases/$(database)/documents/topics/$(topicId));
+      return topicDoc != null && (
+        topicDoc.data.createdBy == request.auth.uid ||
+        topicDoc.data.partnerId == request.auth.uid ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.partnerId == topicDoc.data.createdBy
+      );
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId);
+      allow update: if isAuthenticated() && (
+        isOwner(userId) || 
+        isPartner(userId) || 
+        hasValidInviteCode(userId)
+      );
+      allow delete: if isAuthenticated() && isOwner(userId);
+
+      match /inviteCodes/{codeId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (
+          isOwner(userId) || 
+          request.resource.data.code in get(/databases/$(database)/documents/users/$(userId)).data.inviteCodes
+        );
+      }
+    }
+
+    // Topics collection
+    match /topics/{topicId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && (
+        resource.data.createdBy == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.partnerId == resource.data.createdBy
+      );
+
+      match /responses/{responseId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && (
+          get(/databases/$(database)/documents/topics/$(topicId)).data.createdBy == request.auth.uid ||
+          get(/databases/$(database)/documents/topics/$(topicId)).data.partnerId == request.auth.uid
+        );
+        allow update, delete: if isAuthenticated() && (
+          resource.data.createdBy == request.auth.uid ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.partnerId == resource.data.createdBy
+        );
+      }
+
+      match /decisions/{decisionId} {
+        allow read: if isAuthenticated() && hasTopicAccess(topicId);
+        allow create, update: if isAuthenticated() && hasTopicAccess(topicId);
+        allow delete: if isAuthenticated() && (
+          resource.data.createdBy == request.auth.uid ||
+          get(/databases/$(database)/documents/topics/$(topicId)).data.createdBy == request.auth.uid
+        );
+      }
+
+      match /decisionNotifications/{notificationId} {
+        allow read: if isAuthenticated() && hasTopicAccess(topicId);
+        allow write: if isAuthenticated() && hasTopicAccess(topicId);
+      }
+    }
+
+    // UserSettings collection
+    match /userSettings/{userId} {
+      allow read: if isAuthenticated() && isOwner(userId);
+      allow write: if isAuthenticated() && isOwner(userId);
+    }
+
+    // Notifications collection
+    match /notifications/{userId} {
+      allow read: if isAuthenticated() && isOwner(userId);
+      allow write: if isAuthenticated() && (isOwner(userId) || isPartner(userId));
+    }
+
+    // Messages collection
+    match /messages/{messageId} {
+      allow read: if isAuthenticated() && (
+        resource.data.senderId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid
+      );
+      allow create: if isAuthenticated() && (
+        request.resource.data.senderId == request.auth.uid &&
+        hasValidPartner()
+      );
+      allow update: if isAuthenticated() && (
+        resource.data.senderId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && resource.data.senderId == request.auth.uid;
+    }
+
+    // TopicChats collection
+    match /topicChats/{topicId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && (
+        get(/databases/$(database)/documents/topics/$(topicId)).data.createdBy == request.auth.uid ||
+        get(/databases/$(database)/documents/topics/$(topicId)).data.partnerId == request.auth.uid
+      );
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (
+          get(/databases/$(database)/documents/topics/$(topicId)).data.createdBy == request.auth.uid ||
+          get(/databases/$(database)/documents/topics/$(topicId)).data.partnerId == request.auth.uid
+        );
+      }
+    }
+  }
+} 

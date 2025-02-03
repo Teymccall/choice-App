@@ -120,7 +120,7 @@ const Dashboard = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-16 pb-20 sm:pb-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-black pt-16 pb-20 sm:pb-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Welcome, {user.displayName}!</h1>
@@ -134,12 +134,12 @@ const Dashboard = () => {
         </div>
 
         {partner && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-8">
+          <div className="bg-white dark:bg-black rounded-lg shadow p-6 mb-8 border border-gray-200 dark:border-gray-800">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Quick Actions</h2>
               <Link
                 to="/topics"
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600"
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-black hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-200 transition-colors"
               >
                 <PlusCircleIcon className="h-5 w-5 mr-2" />
                 New Topic
@@ -149,9 +149,9 @@ const Dashboard = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Link
                 to="/topics"
-                className="flex items-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                className="flex items-center p-4 bg-gray-50 dark:bg-black rounded-lg hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors border border-gray-200 dark:border-gray-800"
               >
-                <ChatBubbleLeftRightIcon className="h-6 w-6 text-primary-600 dark:text-primary-400 mr-3" />
+                <ChatBubbleLeftRightIcon className="h-6 w-6 text-black dark:text-white mr-3" />
                 <div>
                   <h3 className="font-medium text-gray-900 dark:text-white">Discuss Topics</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">View and respond to topics</p>
@@ -160,9 +160,9 @@ const Dashboard = () => {
 
               <Link
                 to="/results"
-                className="flex items-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                className="flex items-center p-4 bg-gray-50 dark:bg-black rounded-lg hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors border border-gray-200 dark:border-gray-800"
               >
-                <ChartBarIcon className="h-6 w-6 text-primary-600 dark:text-primary-400 mr-3" />
+                <ChartBarIcon className="h-6 w-6 text-black dark:text-white mr-3" />
                 <div>
                   <h3 className="font-medium text-gray-900 dark:text-white">View Results</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Track your progress together</p>

@@ -290,8 +290,8 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
             relative group
             ${message.media && !isDeleted ? 'rounded-lg overflow-hidden' : message.replyTo ? 'rounded-b-[7px]' : 'rounded-[7px]'}
             ${isOwnMessage 
-              ? isDeleted ? 'bg-[#f0f0f0]' : 'bg-[#dcf8c6]'
-              : isDeleted ? 'bg-[#f0f0f0]' : 'bg-white'
+              ? isDeleted ? 'bg-[#f0f0f0] dark:bg-gray-700' : 'bg-[#dcf8c6] dark:bg-[#202c33]'
+              : isDeleted ? 'bg-[#f0f0f0] dark:bg-gray-700' : 'bg-white dark:bg-[#202c33]'
             }
             ${message.media && !isDeleted ? '' : isOwnMessage ? 'rounded-tr-[4px]' : 'rounded-tl-[4px]'}
             shadow-sm
@@ -306,8 +306,8 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
               <div className={`
                 w-4 h-4 transform rotate-45 origin-top-left
                 ${isOwnMessage 
-                  ? 'bg-[#dcf8c6] -translate-x-1/2' 
-                  : 'bg-white translate-x-1/2'
+                  ? 'bg-[#dcf8c6] dark:bg-[#202c33] -translate-x-1/2' 
+                  : 'bg-white dark:bg-[#202c33] translate-x-1/2'
                 }
               `}/>
             </div>
@@ -315,10 +315,10 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
             <div className="px-[9px] py-[6px] min-w-[85px]">
               {isDeleted ? (
                 <div className="flex items-center space-x-2">
-                  <span className="text-[14.2px] text-gray-500 italic">
+                  <span className="text-[14.2px] text-gray-500 dark:text-gray-400 italic">
                     This message was deleted
                   </span>
-                  <span className="text-[11px] text-gray-500 leading-none">
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400 leading-none">
                     {timeString}
                   </span>
                 </div>
@@ -343,7 +343,7 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
                                 setEditedText(message.text);
                               }
                             }}
-                            className="flex-1 bg-transparent border-none focus:ring-0 p-0 text-[14.2px] resize-none max-h-[150px] min-h-[19px]"
+                            className="flex-1 bg-transparent border-none focus:ring-0 p-0 text-[14.2px] resize-none max-h-[150px] min-h-[19px] text-[#303030] dark:text-white"
                             style={{
                               height: 'auto',
                               minHeight: '19px'
@@ -351,23 +351,23 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
                           />
                           <button
                             onClick={handleEdit}
-                            className="text-blue-500 hover:text-blue-600"
+                            className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
                           >
                             <CheckIcon className="h-5 w-5" />
                           </button>
                         </div>
                       ) : (
-                        <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] text-[#303030]`}>
+                        <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] text-[#303030] dark:text-white`}>
                           {message.text}
                           {message.edited && (
-                            <span className="text-[11px] text-[#667781] ml-1">
+                            <span className="text-[11px] text-[#667781] dark:text-[#8696a0] ml-1">
                               (edited)
                             </span>
                           )}
                         </p>
                       )}
                       <div className="flex justify-end items-center mt-1 space-x-1">
-                        <span className="text-[11px] text-[#667781] leading-none">
+                        <span className="text-[11px] text-[#667781] dark:text-[#8696a0] leading-none">
                           {timeString}
                         </span>
                         {renderReadReceipt()}

@@ -6,18 +6,57 @@ module.exports = {
     extend: {
       colors: {
         primary: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          200: '#bae6fd',
-          300: '#7dd3fc',
-          400: '#38bdf8',
-          500: '#0ea5e9',
-          600: '#0284c7',
-          700: '#0369a1',
-          800: '#075985',
-          900: '#0c4a6e',
+          50: '#f7f7f7',
+          100: '#e3e3e3',
+          200: '#c8c8c8',
+          300: '#a4a4a4',
+          400: '#818181',
+          500: '#666666',
+          600: '#515151',
+          700: '#434343',
+          800: '#383838',
+          900: '#000000',
+        },
+        active: '#000000',
+        accent: {
+          light: '#e3e3e3',
+          DEFAULT: '#000000',
+          dark: '#1a1a1a',
+        },
+        dark: {
+          bg: '#000000',
+          surface: '#000000',
+          border: '#333333',
+          hover: '#1a1a1a',
+          active: '#333333',
+          text: {
+            primary: '#ffffff',
+            secondary: '#a0a0a0',
+          },
         },
       },
+      backgroundColor: theme => ({
+        ...theme('colors'),
+        'dark-mode': {
+          primary: '#000000',
+          secondary: '#000000',
+          surface: '#000000',
+        },
+      }),
+      textColor: theme => ({
+        ...theme('colors'),
+        'dark-mode': {
+          primary: '#ffffff',
+          secondary: '#a0a0a0',
+        },
+      }),
+      borderColor: theme => ({
+        ...theme('colors'),
+        'dark-mode': {
+          primary: '#333333',
+          secondary: '#333333',
+        },
+      }),
       animation: {
         'slide-up': 'slideUp 0.3s ease-out',
         'slide-down': 'slideDown 0.3s ease-out',

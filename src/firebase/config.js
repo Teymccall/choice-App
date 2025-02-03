@@ -11,6 +11,7 @@ import {
 import { getDatabase } from "firebase/database";
 import { getStorage } from "firebase/storage";
 import { getMessaging, getToken, onMessage, isSupported } from 'firebase/messaging';
+import { ref, set, serverTimestamp } from 'firebase/database';
 
 // Constants for authentication and retry logic
 export const TIMEOUT = 30000; // 30 seconds
@@ -52,6 +53,9 @@ setPersistence(auth, browserLocalPersistence);
 // Initialize Messaging with proper checks
 let messaging = null;
 
+// Add VAPID key configuration
+const VAPID_KEY = "BLwiJ4v1I6ICbjuVg1y03ASqrrKD8SEy8jS2KgbvzgY4GX6UwLZknHaNz50507OKQsKFJMwh_7nXwUACTmW5lig";
+
 // Function to initialize messaging
 const initializeMessaging = async () => {
   try {
@@ -70,42 +74,117 @@ const initializeMessaging = async () => {
   }
 };
 
-// Function to request notification permission and get FCM token
+// Function to request notification permission
 const requestNotificationPermission = async () => {
   try {
-    console.log('Checking if messaging is initialized...');
+    console.log('Starting notification permission request process...');
+    console.log('Browser/Device Info:', {
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      vendor: navigator.vendor,
+      isMobile: /Mobile|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    });
+    
+    // Step 1: Check if notifications are supported
+    if (!('Notification' in window)) {
+      console.error('This browser does not support notifications');
+      return null;
+    }
+
+    // Step 2: Check messaging initialization
+    console.log('Checking messaging initialization...');
     const isInitialized = await initializeMessaging();
     if (!isInitialized) {
       console.error('Messaging not initialized, cannot request permission');
       return null;
     }
+    console.log('Messaging initialized successfully');
 
-    console.log('Requesting notification permission from browser...');
-    const permission = await Notification.requestPermission();
-    console.log('Browser notification permission:', permission);
+    // Step 3: Check authentication
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      console.error('No authenticated user found');
+      return null;
+    }
+    console.log('User authenticated:', currentUser.uid);
+
+    // Step 4: Request browser permission with fallback
+    console.log('Requesting notification permission...');
+    let permission;
+    try {
+      permission = await Notification.requestPermission();
+    } catch (error) {
+      // Fallback for older browsers
+      permission = await new Promise((resolve) => {
+        Notification.requestPermission(resolve);
+      });
+    }
+    console.log('Notification permission:', permission);
     
     if (permission !== 'granted') {
-      console.log('Notification permission denied by user');
+      console.log('Notification permission denied');
       return null;
     }
 
-    console.log('Permission granted, getting FCM token...');
-    // Get FCM token with proper vapidKey
-    const token = await getToken(messaging, {
-      vapidKey: "BPYfFKEflrYoH3jNvhQOGC5RKzpYuYHgzUoiV9D4Q-hWGz7gjV_AgRdpG_MgKFBJxQcYHXp-9Tko-W_Y5uX3Yl8"
-    }).catch(error => {
-      console.error('Error getting FCM token:', error);
-      if (error.code === 'messaging/failed-service-worker-registration') {
-        console.error('Service Worker registration failed. Make sure you have a valid service worker file.');
+    // Step 5: Get service worker registration with better error handling
+    console.log('Getting service worker registration...');
+    let registration;
+    try {
+      registration = await navigator.serviceWorker.ready;
+      console.log('Service worker is ready');
+    } catch (error) {
+      console.error('Service worker registration failed:', error);
+      // Try registering the service worker if it failed
+      try {
+        registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        console.log('Service worker registered successfully');
+      } catch (regError) {
+        console.error('Service worker registration failed:', regError);
+        return null;
       }
-      if (error.code === 'messaging/no-sw-in-reg') {
-        console.error('No service worker found in registration.');
-      }
-      throw error;
-    });
+    }
+
+    // Step 6: Get FCM token with device-specific options
+    console.log('Getting FCM token...');
+    const tokenOptions = {
+      vapidKey: VAPID_KEY,
+      serviceWorkerRegistration: registration
+    };
+
+    // Add additional options for mobile devices if needed
+    if (/Mobile|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      console.log('Configuring for mobile device');
+      // Mobile-specific configurations can be added here
+    }
+
+    const token = await getToken(messaging, tokenOptions);
 
     if (token) {
-      console.log('FCM Token successfully generated');
+      console.log('FCM Token generated successfully');
+      console.log('================== FCM TOKEN ==================');
+      console.log(token);
+      console.log('=============================================');
+      
+      // Store the token with device info
+      const tokenRef = ref(rtdb, `users/${currentUser.uid}/fcmTokens/${token}`);
+      await set(tokenRef, {
+        token,
+        createdAt: serverTimestamp(),
+        lastUpdated: serverTimestamp(),
+        device: {
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          vendor: navigator.vendor,
+          isMobile: /Mobile|Android|iPhone|iPad|iPod/i.test(navigator.userAgent),
+          language: navigator.language,
+          screenSize: {
+            width: window.screen.width,
+            height: window.screen.height
+          }
+        }
+      });
+      
+      console.log('Token stored in database with device info');
       return token;
     } else {
       console.error('FCM Token generation failed - token is null');
@@ -113,12 +192,13 @@ const requestNotificationPermission = async () => {
     }
   } catch (error) {
     console.error('Error in requestNotificationPermission:', error);
-    if (error.code === 'messaging/permission-blocked') {
-      console.error('Notifications are blocked by the browser');
-    } else if (error.code === 'messaging/unsupported-browser') {
-      console.error('Browser does not support push notifications');
-    }
-    return null;
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      stack: error.stack,
+      browser: navigator.userAgent
+    });
+    throw error;
   }
 };
 

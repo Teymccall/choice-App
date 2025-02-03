@@ -14,6 +14,8 @@ import {
 } from '@heroicons/react/24/outline';
 import { ref, onValue, update, serverTimestamp } from 'firebase/database';
 import { rtdb } from '../firebase/config';
+import { Link } from 'react-router-dom';
+import { PlusCircleIcon } from '@heroicons/react/24/outline';
 
 const SUGGESTIONS = {
   matched: {
@@ -220,7 +222,7 @@ const Results = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-16 pb-20 sm:pb-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-black pt-16 pb-20 sm:pb-8">
       <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-6">
         <div className="text-center mb-6 sm:mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Results & Statistics</h1>
@@ -233,9 +235,9 @@ const Results = () => {
         <div className="mb-6 sm:mb-8 -mx-2 sm:mx-0">
           <div className="flex gap-3 px-2 sm:px-0 overflow-x-auto pb-4 snap-x snap-mandatory">
             {/* Total Topics Card */}
-            <div className="flex-none w-[80%] sm:w-56 snap-center bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-transform hover:scale-105">
-              <div className="inline-flex p-2 rounded-lg bg-blue-500">
-                <ChartBarIcon className="h-5 w-5 text-white" />
+            <div className="flex-none w-[80%] sm:w-56 snap-center bg-white dark:bg-black rounded-lg shadow p-4 transition-transform hover:scale-105 border border-gray-200 dark:border-gray-800">
+              <div className="inline-flex p-2 rounded-lg bg-black dark:bg-white">
+                <ChartBarIcon className="h-5 w-5 text-white dark:text-black" />
               </div>
               <h3 className="mt-3 text-base font-medium text-gray-900 dark:text-white">Total Topics</h3>
               <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{stats.totalTopics}</p>
@@ -243,9 +245,9 @@ const Results = () => {
             </div>
 
             {/* Completed Card */}
-            <div className="flex-none w-[80%] sm:w-56 snap-center bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-transform hover:scale-105">
-              <div className="inline-flex p-2 rounded-lg bg-green-500">
-                <CheckCircleIcon className="h-5 w-5 text-white" />
+            <div className="flex-none w-[80%] sm:w-56 snap-center bg-white dark:bg-black rounded-lg shadow p-4 transition-transform hover:scale-105 border border-gray-200 dark:border-gray-800">
+              <div className="inline-flex p-2 rounded-lg bg-black dark:bg-white">
+                <CheckCircleIcon className="h-5 w-5 text-white dark:text-black" />
               </div>
               <h3 className="mt-3 text-base font-medium text-gray-900 dark:text-white">Completed</h3>
               <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{stats.completedTopics}</p>
@@ -253,9 +255,9 @@ const Results = () => {
             </div>
 
             {/* In Progress Card */}
-            <div className="flex-none w-[80%] sm:w-56 snap-center bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-transform hover:scale-105">
-              <div className="inline-flex p-2 rounded-lg bg-yellow-500">
-                <ClockIcon className="h-5 w-5 text-white" />
+            <div className="flex-none w-[80%] sm:w-56 snap-center bg-white dark:bg-black rounded-lg shadow p-4 transition-transform hover:scale-105 border border-gray-200 dark:border-gray-800">
+              <div className="inline-flex p-2 rounded-lg bg-black dark:bg-white">
+                <ClockIcon className="h-5 w-5 text-white dark:text-black" />
               </div>
               <h3 className="mt-3 text-base font-medium text-gray-900 dark:text-white">In Progress</h3>
               <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{stats.pendingTopics}</p>
@@ -263,9 +265,9 @@ const Results = () => {
             </div>
 
             {/* Agreement Rate Card */}
-            <div className="flex-none w-[80%] sm:w-56 snap-center bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-transform hover:scale-105">
-              <div className="inline-flex p-2 rounded-lg bg-primary-500">
-                <TagIcon className="h-5 w-5 text-white" />
+            <div className="flex-none w-[80%] sm:w-56 snap-center bg-white dark:bg-black rounded-lg shadow p-4 transition-transform hover:scale-105 border border-gray-200 dark:border-gray-800">
+              <div className="inline-flex p-2 rounded-lg bg-black dark:bg-white">
+                <TagIcon className="h-5 w-5 text-white dark:text-black" />
               </div>
               <h3 className="mt-3 text-base font-medium text-gray-900 dark:text-white">Agreement Rate</h3>
               <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{stats.agreementRate.toFixed(1)}%</p>
@@ -285,7 +287,7 @@ const Results = () => {
                 return (
                   <div
                     key={result.id}
-                    className={`bg-white dark:bg-gray-800 shadow p-4 sm:p-6 transform hover:scale-[1.02] hover:shadow-lg transition-all duration-200 animate-slide-up ${
+                    className={`bg-white dark:bg-black shadow p-4 sm:p-6 transform hover:scale-[1.02] hover:shadow-lg transition-all duration-200 animate-slide-up ${
                       selectedResult === result.id ? 'ring-2 ring-primary-500' : ''
                     }`}
                     style={{ animationDelay: `${index * 200}ms` }}
@@ -434,6 +436,15 @@ const Results = () => {
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   Complete some topics together to see your results here
                 </p>
+                <div className="mt-6">
+                  <Link
+                    to="/topics"
+                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-black hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-200 transition-colors"
+                  >
+                    <PlusCircleIcon className="h-5 w-5 mr-2" />
+                    Create New Topic
+                  </Link>
+                </div>
               </div>
             )}
           </div>

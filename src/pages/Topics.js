@@ -71,14 +71,14 @@ const TopicCard = ({ topic, onRespond, onDiscuss, unreadMessages }) => {
     }
     return null;
   };
-
+  
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-all duration-200 hover:shadow-md">
+    <div className="bg-white dark:bg-black rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden transition-all duration-200 hover:shadow-md">
       {/* Header */}
       <div className="p-4">
         <div className="flex flex-col space-y-2">
           <div className="flex items-start justify-between">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 flex-1">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white flex-1">
               {topic.question}
             </h3>
             {bothResponded && (
@@ -110,103 +110,47 @@ const TopicCard = ({ topic, onRespond, onDiscuss, unreadMessages }) => {
         </div>
       </div>
 
-      {/* Responses Section */}
-      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-750 border-t border-gray-200 dark:border-gray-700">
-        <div className="flex flex-col space-y-2">
-          {bothResponded ? (
-            // Show both responses only when both have responded
-            <>
-            <div className="flex items-center space-x-2">
-              <div className={`flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${
-                userResponse 
-                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                  : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-              }`}>
-                {userResponse 
-                  ? <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
-                  : <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
-                }
-                Your choice: {userResponse ? 'Yes' : 'No'}
-              </div>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className={`flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${
-                partnerResponse 
-                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                  : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-              }`}>
-                {partnerResponse 
-                  ? <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
-                  : <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
-                }
-                {partnerName}'s choice: {partnerResponse ? 'Yes' : 'No'}
-                </div>
-              </div>
-            </>
-          ) : (
-            // Show appropriate status messages when not both responded
-            <>
-              {userResponse !== undefined && (
-                <div className="flex items-center space-x-2">
-                  <div className={`flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${
-                    userResponse 
-                      ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                      : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                  }`}>
-                    {userResponse 
-                      ? <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
-                      : <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
-                    }
-                    Your choice: {userResponse ? 'Yes' : 'No'}
-              </div>
-            </div>
-          )}
-          {/* Status Message */}
-          {getStatusMessage()}
-            </>
-          )}
-        </div>
-      </div>
+      {/* Response Status */}
+      <div className="px-4 pb-4">
+        {getStatusMessage()}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => onRespond(topic.id, true)}
+              disabled={userResponse !== undefined}
+              className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 
+                ${userResponse === undefined 
+                  ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900 dark:text-green-200 dark:hover:bg-green-800'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-500'}`}
+            >
+              <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
+              Yes
+            </button>
+            <button
+              onClick={() => onRespond(topic.id, false)}
+              disabled={userResponse !== undefined}
+              className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200
+                ${userResponse === undefined 
+                  ? 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900 dark:text-red-200 dark:hover:bg-red-800'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-500'}`}
+            >
+              <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
+              No
+            </button>
+          </div>
 
-      {/* Actions Section */}
-      <div className="px-4 py-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
-        {/* Response Buttons - Disabled if user has already responded */}
-        <div className="flex items-center space-x-2">
-              <button
-            onClick={() => onRespond(topic.id, true)}
-            disabled={userResponse !== undefined}
-            className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 
-              ${userResponse === undefined 
-                ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900 dark:text-green-200 dark:hover:bg-green-800'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-700 dark:text-gray-500'}`}
-              >
-                <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
-                Yes
-              </button>
-              <button
-            onClick={() => onRespond(topic.id, false)}
-            disabled={userResponse !== undefined}
-            className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200
-              ${userResponse === undefined 
-                ? 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900 dark:text-red-200 dark:hover:bg-red-800'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-700 dark:text-gray-500'}`}
-              >
-                <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
-                No
-              </button>
+          {/* Discuss Button */}
+          <button
+            onClick={() => onDiscuss(topic)}
+            className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium text-white bg-black hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-200 transition-colors relative"
+          >
+            <ChatBubbleLeftRightIcon className="h-4 w-4 mr-1.5" />
+            Discuss
+            {unreadMessages && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-600 dark:bg-blue-400 rounded-full animate-pulse" />
+            )}
+          </button>
         </div>
-
-        {/* Discuss Button */}
-        <button
-          onClick={() => onDiscuss(topic)}
-          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-full text-primary-700 bg-primary-100 hover:bg-primary-200 dark:text-primary-200 dark:bg-primary-900 dark:hover:bg-primary-800 transition-colors relative"
-        >
-          <ChatBubbleLeftRightIcon className="h-4 w-4 mr-1.5" />
-          Discuss
-          {unreadMessages && (
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-primary-600 rounded-full animate-pulse" />
-          )}
-        </button>
       </div>
     </div>
   );
@@ -590,11 +534,11 @@ const Topics = () => {
   // Show message when not connected
   if (!isOnline || !partner?.email) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="min-h-screen bg-gray-50 dark:bg-black">
         <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
           <div className="text-center py-12">
             <ChatBubbleLeftRightIcon className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-500">Not Connected</h3>
+            <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">Not Connected</h3>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
               Connect with a partner to see and discuss topics together
             </p>
@@ -634,9 +578,9 @@ const Topics = () => {
   }
 
   return (
-    <div className="min-h-screen h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen h-screen flex flex-col bg-gray-50 dark:bg-black">
       {/* Fixed Header Section */}
-      <div className="flex-none px-4 pt-4 pb-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex-none px-4 pt-4 pb-2 bg-gray-50 dark:bg-black border-b border-gray-200 dark:border-gray-800">
         {/* Header */}
         <div className="mb-3">
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Topics</h1>
@@ -655,8 +599,8 @@ const Topics = () => {
                 className={`
                   flex-none inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap
                   ${selectedCategory === category
-                    ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-400'
-                    : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                    ? 'bg-black text-white dark:bg-white dark:text-black'
+                    : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-black dark:text-gray-300 dark:hover:bg-gray-900 border border-gray-200 dark:border-gray-800'
                   }
                 `}
               >
@@ -675,19 +619,19 @@ const Topics = () => {
               value={newTopic}
               onChange={(e) => setNewTopic(e.target.value)}
               placeholder="Enter a new topic..."
-              className="flex-1 h-10 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 capitalize"
+              className="flex-1 h-10 px-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-black text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-black dark:focus:border-white"
               style={{ textTransform: 'capitalize' }}
             />
             <button
               type="submit"
               disabled={!newTopic.trim()}
-              className={`h-10 px-4 inline-flex items-center justify-center border border-transparent rounded-lg text-sm font-medium text-white transition-all duration-200 ${
+              className={`h-10 px-4 inline-flex items-center justify-center border border-transparent rounded-lg text-sm font-medium transition-all duration-200 ${
                 newTopic.trim() 
-                  ? 'bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:focus:ring-offset-gray-900' 
-                  : 'bg-gray-300 cursor-not-allowed dark:bg-gray-700'
+                  ? 'text-white bg-black hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black dark:focus:ring-white dark:focus:ring-offset-black' 
+                  : 'bg-gray-300 cursor-not-allowed dark:bg-gray-700 text-gray-500 dark:text-gray-400'
               }`}
             >
-              <PlusIcon className={`h-5 w-5 ${newTopic.trim() ? 'text-white' : 'text-gray-500'}`} />
+              <PlusIcon className="h-5 w-5" />
               <span className="sr-only">Add Topic</span>
             </button>
           </div>
@@ -702,7 +646,7 @@ const Topics = () => {
         <div className="px-4 py-2 space-y-3">
           {loading ? (
             <div className="flex items-center justify-center py-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-600 border-t-transparent"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-black border-t-transparent dark:border-white dark:border-t-transparent"></div>
             </div>
           ) : topics.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 px-4 text-center">

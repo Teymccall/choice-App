@@ -1,0 +1,126 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null",
+
+    "users": {
+      "$uid": {
+        ".read": "auth !== null",
+        ".write": "$uid === auth.uid",
+        "fcmTokens": {
+          ".read": "$uid === auth.uid",
+          ".write": "$uid === auth.uid"
+        },
+        "inviteCodes": {
+          ".read": "auth != null",
+          ".write": "auth != null && ($uid === auth.uid || root.child('users').child($uid).child('inviteCodes').child(auth.uid).exists())",
+          "$codeId": {
+            ".validate": "newData.hasChildren(['code', 'createdBy', 'createdAt', 'expiresAt', 'used'])"
+          }
+        }
+      }
+    },
+
+    "userSettings": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid",
+        "notifications": {
+          ".read": "$uid === auth.uid",
+          ".write": "$uid === auth.uid"
+        },
+        "theme": {
+          ".validate": "newData.hasChildren(['preference']) && (newData.child('preference').val() === 'light' || newData.child('preference').val() === 'dark' || newData.child('preference').val() === 'system')"
+        },
+        "privacy": {
+          ".validate": "newData.hasChildren(['showProfile', 'anonymousNotes'])"
+        }
+      }
+    },
+
+    "connections": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && $uid === auth.uid",
+        "status": {
+          ".validate": "newData.val() === 'online' || newData.val() === 'offline'"
+        },
+        "lastActive": {
+          ".validate": "newData.isNumber() && newData.val() <= now"
+        }
+      }
+    },
+
+    "topics": {
+      "$topicId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || data.child('createdBy').val() === auth.uid || data.child('partnerId').val() === auth.uid)",
+        "decisions": {
+          ".read": "auth != null",
+          ".write": "auth != null && (data.child('createdBy').val() === auth.uid || data.child('partnerId').val() === auth.uid)",
+          "$decisionId": {
+            ".validate": "newData.hasChildren(['createdBy', 'decision', 'timestamp'])"
+          }
+        },
+        "status": {
+          ".read": "auth != null",
+          ".write": "auth != null && (data.child('createdBy').val() === auth.uid || data.child('partnerId').val() === auth.uid)"
+        },
+        "participants": {
+          ".read": "auth != null",
+          ".write": "auth != null && (data.child('createdBy').val() === auth.uid || data.child('partnerId').val() === auth.uid)"
+        }
+      }
+    },
+
+    "typing": {
+      "$topicId": {
+        "$userId": {
+          ".read": "auth != null",
+          ".write": "auth != null && $userId === auth.uid",
+          "isTyping": {
+            ".validate": "newData.isBoolean()"
+          },
+          "timestamp": {
+            ".validate": "newData.isNumber() && newData.val() <= now"
+          }
+        }
+      }
+    },
+
+    "notifications": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid || root.child('users').child($uid).child('partnerId').val() === auth.uid",
+        "$notificationId": {
+          ".validate": "newData.hasChildren(['timestamp'])"
+        }
+      }
+    },
+
+    "topicChats": {
+      "$topicId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('topics').child($topicId).child('createdBy').val() === auth.uid || root.child('topics').child($topicId).child('partnerId').val() === auth.uid)",
+        "messages": {
+          "$messageId": {
+            ".validate": "newData.hasChildren(['senderId', 'content', 'timestamp'])"
+          }
+        }
+      }
+    },
+
+    "presence": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && $uid === auth.uid",
+        "lastOnline": {
+          ".validate": "newData.isNumber() && newData.val() <= now"
+        },
+        "isOnline": {
+          ".validate": "newData.isBoolean()"
+        }
+      }
+    }
+  }
+} 

@@ -17,9 +17,9 @@ const FloatingNav = () => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
   const { user, partner } = useAuth();
-  const [unreadChats, setUnreadChats] = React.useState(0);
-  const [pendingResponses, setPendingResponses] = React.useState(0);
-  const [newTopics, setNewTopics] = React.useState(0);
+  const [unreadChats, setUnreadChats] = useState(0);
+  const [pendingResponses, setPendingResponses] = useState(0);
+  const [newTopics, setNewTopics] = useState(0);
 
   const navItems = [
     { path: '/dashboard', name: 'Dashboard', icon: HomeIcon },
@@ -27,12 +27,11 @@ const FloatingNav = () => {
       path: '/topics', 
       name: 'Topics', 
       icon: ChatBubbleLeftRightIcon,
-      badge: (unreadChats > 0 || pendingResponses > 0 || newTopics > 0) ? 
-        {
-          messages: location.pathname !== '/topics' && unreadChats > 0,
-          responses: location.pathname !== '/topics' && pendingResponses > 0,
-          topics: location.pathname !== '/topics' && newTopics > 0
-        } : null
+      badge: {
+        messages: true,
+        responses: true,
+        topics: true
+      }
     },
     { path: '/results', name: 'Results', icon: ChartBarIcon },
     { path: '/settings', name: 'Settings', icon: Cog6ToothIcon },
@@ -49,36 +48,6 @@ const FloatingNav = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  // Clear badges when navigating to topics page
-  useEffect(() => {
-    if (location.pathname === '/topics' && user?.uid) {
-      // Clear new topics badge
-      localStorage.setItem(`lastChecked_topics_${user.uid}_${partner?.uid || 'none'}`, Date.now().toString());
-      setNewTopics(0);
-      
-      // Clear unread chats if a topic is open
-      const openTopicId = sessionStorage.getItem('openTopicChatId');
-      if (openTopicId) {
-        localStorage.setItem(`lastRead_${openTopicId}_${user.uid}`, Date.now().toString());
-        setUnreadChats(0);
-      }
-      
-      // Clear pending responses
-      setPendingResponses(0);
-    }
-  }, [location.pathname, user?.uid, partner?.uid]);
-
-  // Reset notifications when partner changes
-  useEffect(() => {
-    if (user?.uid && partner?.uid) {
-      // Reset last checked time for new partnership
-      localStorage.setItem(`lastChecked_topics_${user.uid}_${partner.uid}`, Date.now().toString());
-      setNewTopics(0);
-      setPendingResponses(0);
-      setUnreadChats(0);
-    }
-  }, [user?.uid, partner?.uid]);
 
   // Track notifications and unread messages
   useEffect(() => {
@@ -105,8 +74,8 @@ const FloatingNav = () => {
         localStorage.getItem(`lastChecked_topics_${user.uid}_${partner.uid}`)
       ) || Date.now();
 
-      // Check for new topics only if not on topics page
-      const newTopicsCount = location.pathname !== '/topics' ? Object.values(data).filter(topic => {
+      // Check for new topics
+      const newTopicsCount = Object.values(data).filter(topic => {
         // Only count topics that involve both current user and current partner
         const isRelevantTopic = (topic.createdBy === user.uid && topic.partnerId === partner.uid) ||
                                (topic.createdBy === partner.uid && topic.partnerId === user.uid);
@@ -114,12 +83,12 @@ const FloatingNav = () => {
         return isRelevantTopic && 
                topic.createdAt > lastCheckedTopics && 
                topic.createdBy !== user.uid;
-      }).length : 0;
+      }).length;
       
       setNewTopics(newTopicsCount);
 
-      // Check for new responses only if not on topics page
-      const responsesCount = location.pathname !== '/topics' ? Object.values(data).filter(topic => {
+      // Check for new responses
+      const responsesCount = Object.values(data).filter(topic => {
         // Only count responses for topics between current partners
         const isRelevantTopic = (topic.createdBy === user.uid && topic.partnerId === partner.uid) ||
                                (topic.createdBy === partner.uid && topic.partnerId === user.uid);
@@ -129,20 +98,19 @@ const FloatingNav = () => {
         const lastChecked = parseInt(localStorage.getItem(`lastChecked_${topic.id}_${user.uid}`)) || 0;
         const partnerResponseTime = parseInt(topic.responses[partner.uid].timestamp);
         return partnerResponseTime > lastChecked && !topic.responses[user.uid];
-      }).length : 0;
+      }).length;
       
       setPendingResponses(responsesCount);
     });
 
     return () => unsubscribe();
-  }, [user?.uid, partner?.uid, location.pathname]);
+  }, [user?.uid, partner?.uid]);
 
-  // Track unread chats
+  // Listen for chat updates
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid || !partner?.uid) return;
 
     const chatsRef = ref(rtdb, 'topicChats');
-    
     const unsubscribe = onValue(chatsRef, (snapshot) => {
       const data = snapshot.val();
       if (!data) {
@@ -150,29 +118,29 @@ const FloatingNav = () => {
         return;
       }
 
-      // Only count unread messages if not on topics page
-      if (location.pathname === '/topics') {
-        setUnreadChats(0);
-        return;
-      }
-
       let unreadCount = 0;
       Object.entries(data).forEach(([topicId, chat]) => {
         if (!chat?.messages) return;
-        
+
         const lastReadTimestamp = parseInt(localStorage.getItem(`lastRead_${topicId}_${user.uid}`)) || 0;
         const isTopicOpen = sessionStorage.getItem('openTopicChatId') === topicId;
         
-        if (isTopicOpen) {
-          localStorage.setItem(`lastRead_${topicId}_${user.uid}`, Date.now().toString());
-          return;
-        }
-        
-        const unreadMessages = Object.values(chat.messages).filter(message => 
-          message.userId !== user.uid && 
-          parseInt(message.timestamp) > lastReadTimestamp
-        );
-        
+        if (isTopicOpen) return;
+
+        const unreadMessages = Object.values(chat.messages).filter(message => {
+          const messageTimestamp = message.timestamp ? 
+            (typeof message.timestamp === 'number' ? 
+              message.timestamp : 
+              message.timestamp?.toMillis?.() || 
+              parseInt(message.timestamp) || 
+              Date.now()
+            ) : Date.now();
+
+          return message.userId === partner.uid && 
+                 message.partnerId === user.uid && 
+                 messageTimestamp > lastReadTimestamp;
+        });
+
         unreadCount += unreadMessages.length;
       });
 
@@ -180,11 +148,17 @@ const FloatingNav = () => {
     });
 
     return () => unsubscribe();
-  }, [user?.uid, location.pathname]);
+  }, [user?.uid, partner?.uid]);
+
+  // Clear badges when navigating to topics page
+  useEffect(() => {
+    if (location.pathname === '/topics' && user?.uid) {
+      localStorage.setItem(`lastChecked_topics_${user.uid}_${partner?.uid || 'none'}`, Date.now().toString());
+      setNewTopics(0);
+    }
+  }, [location.pathname, user?.uid, partner?.uid]);
 
   if (!user) return null;
-
-  const totalNotifications = (unreadChats || 0) + (pendingResponses || 0) + (newTopics || 0);
 
   return (
     <>
@@ -200,15 +174,15 @@ const FloatingNav = () => {
         {isOpen ? (
           <XMarkIcon className="w-5 h-5 text-white" />
         ) : (
-          <>
+          <div className="relative">
             <Bars3Icon className="w-5 h-5 text-white" />
-            {totalNotifications > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs 
-                rounded-full h-5 w-5 flex items-center justify-center">
-                {totalNotifications}
+            {(unreadChats > 0 || pendingResponses > 0 || newTopics > 0) && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs 
+                rounded-full h-4 w-4 flex items-center justify-center">
+                {unreadChats + pendingResponses + newTopics}
               </span>
             )}
-          </>
+          </div>
         )}
       </button>
 
@@ -234,7 +208,7 @@ const FloatingNav = () => {
               <span>{item.name}</span>
               {item.badge && (
                 <div className="ml-auto flex space-x-1">
-                  {item.badge.messages && (
+                  {unreadChats > 0 && (
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs">
                       {unreadChats}
                     </span>
