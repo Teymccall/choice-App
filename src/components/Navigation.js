@@ -221,6 +221,59 @@ const Navigation = () => {
     return () => unsubscribe();
   }, [user?.uid, partner?.uid]);
 
+  // Add effect to track completed decisions
+  useEffect(() => {
+    if (!user?.uid || !partner?.uid) return;
+
+    const topicsRef = ref(rtdb, 'topics');
+    const unsubscribe = onValue(topicsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) {
+        setNewDecisions(0);
+        return;
+      }
+
+      // Check for newly completed decisions
+      const lastCheckedResults = parseInt(localStorage.getItem(`lastChecked_results_${user.uid}`)) || 0;
+      
+      // Count topics that are completed and haven't been viewed yet
+      const newDecisionsCount = Object.values(data).filter(topic => {
+        // Only count topics that involve the current user pair
+        const isRelevantTopic = (topic.createdBy === user.uid && topic.partnerId === partner.uid) ||
+                               (topic.createdBy === partner.uid && topic.partnerId === user.uid);
+        
+        if (!isRelevantTopic) return false;
+
+        // Check if both users have responded
+        const bothResponded = topic.responses?.[user.uid]?.response !== undefined && 
+                            topic.responses?.[partner.uid]?.response !== undefined;
+        
+        if (!bothResponded) return false;
+
+        // Get the most recent response timestamp
+        const userResponseTime = topic.responses[user.uid]?.timestamp || 0;
+        const partnerResponseTime = topic.responses[partner.uid]?.timestamp || 0;
+        const lastResponseTime = Math.max(userResponseTime, partnerResponseTime);
+
+        // Count if the last response is newer than our last check
+        return lastResponseTime > lastCheckedResults;
+      }).length;
+
+      console.log('New decisions count:', newDecisionsCount); // Debug log
+      setNewDecisions(newDecisionsCount);
+    });
+
+    return () => unsubscribe();
+  }, [user?.uid, partner?.uid]);
+
+  // Clear results badge when visiting results page
+  useEffect(() => {
+    if (location.pathname === '/results' && user?.uid) {
+      localStorage.setItem(`lastChecked_results_${user.uid}`, Date.now().toString());
+      setNewDecisions(0);
+    }
+  }, [location.pathname, user?.uid]);
+
   if (!user || location.pathname === '/login') return null;
 
   const navItems = [
@@ -236,7 +289,16 @@ const Navigation = () => {
           topics: location.pathname !== '/topics' && newTopics > 0
         } : null
     },
-    { path: '/results', name: 'Results', icon: ChartBarIcon },
+    { 
+      path: '/results', 
+      name: 'Results', 
+      icon: ChartBarIcon,
+      badge: location.pathname !== '/results' && newDecisions > 0 ? 
+        {
+          results: true,
+          count: newDecisions
+        } : null
+    },
     { path: '/settings', name: 'Settings', icon: Cog6ToothIcon },
   ];
 
@@ -362,6 +424,14 @@ const Navigation = () => {
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-5 w-5 bg-green-500 text-white text-xs items-center justify-center">
                             {newTopics}
+                          </span>
+                        </span>
+                      )}
+                      {badge.results && (
+                        <span className="relative flex h-5 w-5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-5 w-5 bg-red-500 text-white text-xs items-center justify-center font-bold">
+                            {badge.count}
                           </span>
                         </span>
                       )}

@@ -75,6 +75,7 @@ const TopicChat = ({ topic, onClose }) => {
   const [relationshipLevel, setRelationshipLevel] = useState({ level: 'Acquaintance', color: 'text-gray-600 dark:text-gray-400' });
   const [nextLevelProgress, setNextLevelProgress] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -244,6 +245,26 @@ const TopicChat = ({ topic, onClose }) => {
     });
   };
 
+  const handleTyping = () => {
+    setIsTyping(true);
+    
+    // Update typing status in the database
+    const typingRef = ref(rtdb, `typing/${topic.id}/${user.uid}`);
+    set(typingRef, true);
+
+    // Clear previous timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Set new timeout to clear typing status
+    typingTimeoutRef.current = setTimeout(async () => {
+      setIsTyping(false);
+      const typingRef = ref(rtdb, `typing/${topic.id}/${user.uid}`);
+      await set(typingRef, false);
+    }, 3000); // Stop typing indicator after 3 seconds of no input
+  };
+
   const handleMessageChange = (e) => {
     const message = e.target.value;
     setNewMessage(message);
@@ -373,6 +394,9 @@ const TopicChat = ({ topic, onClose }) => {
     setShowEmojiPicker(false);
     if (inputRef.current) {
       inputRef.current.focus();
+      // Adjust height if needed
+      inputRef.current.style.height = 'auto';
+      inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
     }
   };
 
@@ -380,83 +404,95 @@ const TopicChat = ({ topic, onClose }) => {
     return [uid1, uid2].sort().join('_');
   };
 
-  const handleSendMessage = async () => {
-    if ((!newMessage.trim() && !selectedFile) || uploadingMedia) return;
+  const handleSendMessage = async (e) => {
+    e?.preventDefault();
+    const trimmedMessage = newMessage.trim();
+    
+    if (editingMessage) {
+      // Handle editing
+      if (trimmedMessage !== editingMessage.text) {
+        await handleEditMessage(editingMessage.id, trimmedMessage);
+      }
+      cancelEditing();
+    } else if (trimmedMessage || audioChunksRef.current.length > 0) {
+      // Handle new message
+      if ((!trimmedMessage && !selectedFile) || uploadingMedia) return;
 
-    try {
-      const messageData = {
-        text: newMessage.trim(),
-        userId: user.uid,
-        partnerId: partner.uid,
-        userName: user.displayName || 'Anonymous',
-        userPhotoURL: user.photoURL,
-        userDisplayName: user.displayName || 'Anonymous',
-        timestamp: serverTimestamp(),
-        edited: false
-      };
-
-      if (replyingTo) {
-        messageData.replyTo = {
-          id: replyingTo.id,
-          text: replyingTo.text,
-          userId: replyingTo.userId,
-          userPhotoURL: replyingTo.userPhotoURL,
-          userDisplayName: replyingTo.userDisplayName,
-          media: replyingTo.media
+      try {
+        const messageData = {
+          text: trimmedMessage,
+          userId: user.uid,
+          partnerId: partner.uid,
+          userName: user.displayName || 'Anonymous',
+          userPhotoURL: user.photoURL,
+          userDisplayName: user.displayName || 'Anonymous',
+          timestamp: serverTimestamp(),
+          edited: false
         };
+
+        if (replyingTo) {
+          messageData.replyTo = {
+            id: replyingTo.id,
+            text: replyingTo.text,
+            userId: replyingTo.userId,
+            userPhotoURL: replyingTo.userPhotoURL,
+            userDisplayName: replyingTo.userDisplayName,
+            media: replyingTo.media
+          };
+        }
+
+        let mediaData = null;
+        if (selectedFile) {
+          setUploadingMedia(true);
+          mediaData = await uploadMedia(selectedFile);
+        }
+
+        const chatRef = ref(rtdb, `topicChats/${topic.id}`);
+        const messageDataWithMedia = {
+          ...messageData,
+          ...(mediaData && {
+            media: {
+              url: mediaData.url,
+              type: selectedFile.type,
+              publicId: mediaData.publicId,
+              resourceType: mediaData.resourceType,
+              format: mediaData.format
+            }
+          })
+        };
+
+        const newMessageRef = await push(chatRef, messageDataWithMedia);
+
+        if (isOnline) {
+          update(ref(rtdb, `topicChats/${topic.id}/${newMessageRef.key}`), {
+            delivered: true
+          });
+        }
+
+        // Update message count with consistent pairing ID
+        const pairingId = getPairingId(user.uid, partner.uid);
+        const messageCountRef = ref(rtdb, `messageCount/${pairingId}`);
+        const countSnapshot = await get(messageCountRef);
+        const currentCount = countSnapshot.val() || 0;
+        await set(messageCountRef, currentCount + 1);
+
+        // Clear input and states
+        setNewMessage('');
+        setReplyingTo(null);
+        setSelectedFile(null);
+        setPreviewUrl(null);
+        setUploadingMedia(false);
+        localStorage.removeItem(`messageDraft_${topic.id}_${user?.uid}`);
+        
+        // Reset textarea height
+        if (inputRef.current) {
+          inputRef.current.style.height = '42px';
+        }
+      } catch (error) {
+        console.error('Error sending message:', error);
+        setError('Failed to send message. Please try again.');
+        setUploadingMedia(false);
       }
-
-      let mediaData = null;
-      if (selectedFile) {
-        setUploadingMedia(true);
-        mediaData = await uploadMedia(selectedFile);
-      }
-
-      const chatRef = ref(rtdb, `topicChats/${topic.id}`);
-      const messageDataWithMedia = {
-        ...messageData,
-        ...(mediaData && {
-          media: {
-            url: mediaData.url,
-            type: selectedFile.type,
-            publicId: mediaData.publicId,
-            resourceType: mediaData.resourceType,
-            format: mediaData.format
-          }
-        })
-      };
-
-      const newMessageRef = await push(chatRef, messageDataWithMedia);
-
-      if (isOnline) {
-        update(ref(rtdb, `topicChats/${topic.id}/${newMessageRef.key}`), {
-          delivered: true
-        });
-      }
-
-      // Update message count with consistent pairing ID
-      const pairingId = getPairingId(user.uid, partner.uid);
-      const messageCountRef = ref(rtdb, `messageCount/${pairingId}`);
-      const countSnapshot = await get(messageCountRef);
-      const currentCount = countSnapshot.val() || 0;
-      await set(messageCountRef, currentCount + 1);
-
-      // Clear input and states
-      setNewMessage('');
-      setReplyingTo(null);
-      setSelectedFile(null);
-      setPreviewUrl(null);
-      setUploadingMedia(false);
-      localStorage.removeItem(`messageDraft_${topic.id}_${user?.uid}`);
-      
-      // Reset textarea height
-      if (inputRef.current) {
-        inputRef.current.style.height = '42px';
-      }
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setError('Failed to send message. Please try again.');
-      setUploadingMedia(false);
     }
   };
 
@@ -473,10 +509,20 @@ const TopicChat = ({ topic, onClose }) => {
       const chatRef = ref(rtdb, `topicChats/${topic.id}/${messageId}`);
       
       if (deleteForEveryone) {
-        // Delete message completely
-        await remove(chatRef);
+        // Instead of removing, update the message to mark it as deleted for everyone
+        await update(chatRef, {
+          deletedForEveryone: true,
+          deletedAt: serverTimestamp(),
+          deletedBy: user.uid
+        });
         // Update local state immediately
-        setMessages(prevMessages => prevMessages.filter(msg => msg.id !== messageId));
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === messageId 
+              ? { ...msg, deletedForEveryone: true, deletedBy: user.uid } 
+              : msg
+          )
+        );
       } else {
         // Add this message ID to user's deleted messages
         const userDeletedRef = ref(rtdb, `deletedMessages/${user.uid}/${topic.id}`);
@@ -484,7 +530,13 @@ const TopicChat = ({ topic, onClose }) => {
           [messageId]: serverTimestamp()
         });
         // Update local state immediately
-        setMessages(prevMessages => prevMessages.filter(msg => msg.id !== messageId));
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === messageId 
+              ? { ...msg, isDeleted: true } 
+              : msg
+          )
+        );
       }
     } catch (error) {
       console.error('Error deleting message:', error);
@@ -501,12 +553,15 @@ const TopicChat = ({ topic, onClose }) => {
         edited: true,
         editedAt: serverTimestamp()
       });
-      // Clear input and reset states after successful edit
-      setNewMessage('');
-      setEditingMessage(null);
-      if (inputRef.current) {
-        inputRef.current.style.height = '42px';
-      }
+      
+      // Update local state to reflect the edit immediately
+      setMessages(prevMessages => 
+        prevMessages.map(msg => 
+          msg.id === messageId 
+            ? { ...msg, text: newText, edited: true } 
+            : msg
+        )
+      );
     } catch (error) {
       console.error('Error editing message:', error);
       setError('Failed to edit message. Please try again.');
@@ -694,34 +749,17 @@ const TopicChat = ({ topic, onClose }) => {
 
   // Modify the message count effect
   useEffect(() => {
-    if (!topic?.id || !user?.uid || !partner?.uid) return;
-
-    const pairingId = getPairingId(user.uid, partner.uid);
-    const messageCountRef = ref(rtdb, `messageCount/${pairingId}`);
+    if (!topic?.id) return;
     
-    const unsubscribe = onValue(messageCountRef, (snapshot) => {
-      const count = snapshot.val() || 0;
+    const chatRef = ref(rtdb, `topicChats/${topic.id}`);
+    const unsubscribe = onValue(chatRef, (snapshot) => {
+      const data = snapshot.val();
+      const count = data ? Object.keys(data).length : 0;
       setMessageCount(count);
-      setRelationshipLevel(getRelationshipLevel(count));
-      
-      // Calculate progress to next level
-      const currentLevelIndex = RELATIONSHIP_LEVELS.findIndex(level => 
-        count >= level.minMessages && count <= level.maxMessages
-      );
-      
-      if (currentLevelIndex < RELATIONSHIP_LEVELS.length - 1) {
-        const currentLevel = RELATIONSHIP_LEVELS[currentLevelIndex];
-        const nextLevel = RELATIONSHIP_LEVELS[currentLevelIndex + 1];
-        const progress = ((count - currentLevel.minMessages) / 
-          (nextLevel.minMessages - currentLevel.minMessages)) * 100;
-        setNextLevelProgress(Math.min(progress, 100));
-      } else {
-        setNextLevelProgress(100);
-      }
     });
 
     return () => unsubscribe();
-  }, [topic?.id, user?.uid, partner?.uid]);
+  }, [topic?.id]);
 
   const handleDeleteTopic = async () => {
     if (!isOnline || !user?.uid) {
@@ -763,10 +801,6 @@ const TopicChat = ({ topic, onClose }) => {
       console.error('Error editing topic:', error);
       setError('Failed to edit topic. Please try again.');
     }
-  };
-
-  const handleImageClick = (imageUrl) => {
-    setViewingImage(imageUrl);
   };
 
   if (loading) {
@@ -827,7 +861,7 @@ const TopicChat = ({ topic, onClose }) => {
             </div>
           ) : (
           <p className="text-[13px] opacity-90 mt-0.5 leading-tight line-clamp-2">
-            {topic.question}
+            {topic.question} ({messageCount} messages)
           </p>
           )}
         </div>
@@ -897,7 +931,7 @@ const TopicChat = ({ topic, onClose }) => {
               isOwnMessage={message.userId === user.uid}
               user={user}
               onReply={handleReply}
-              onImageClick={handleImageClick}
+              onImageClick={setViewingImage}
               messageRefs={messageRefs}
               onDelete={handleDeleteMessage}
               onEdit={handleEditMessage}
@@ -1006,17 +1040,26 @@ const TopicChat = ({ topic, onClose }) => {
             <textarea
               ref={inputRef}
               value={newMessage}
-              onChange={handleMessageChange}
+              onChange={(e) => {
+                setNewMessage(e.target.value);
+                e.target.style.height = '42px';
+                e.target.style.height = `${e.target.scrollHeight}px`;
+                handleTyping();
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSendMessage();
                 }
-                if (e.key === 'Escape' && editingMessage) {
-                  cancelEditing();
+                if (e.key === 'Escape') {
+                  if (editingMessage) {
+                    cancelEditing();
+                  } else if (replyingTo) {
+                    setReplyingTo(null);
+                  }
                 }
               }}
-              placeholder={selectedFile ? "Add a caption..." : editingMessage ? "Edit message..." : "Type a message"}
+              placeholder={editingMessage ? "Edit message..." : "Type a message"}
               className="flex-1 max-h-[100px] min-h-[42px] px-2 py-2 bg-transparent border-none focus:ring-0 text-[15px] placeholder-[#3b4a54] dark:placeholder-[#8696a0] resize-none"
               style={{ height: '42px' }}
             />
