@@ -39,14 +39,31 @@ service cloud.firestore {
       );
     }
 
+    function isRequestRecipient(requestData) {
+      return request.auth.uid == requestData.recipientId;
+    }
+
+    function isRequestSender(requestData) {
+      return request.auth.uid == requestData.senderId;
+    }
+
     // Users collection
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isOwner(userId);
+      allow create: if isAuthenticated() && isOwner(userId) && 
+        request.resource.data.displayNameLower == request.resource.data.displayName.lower() &&
+        request.resource.data.emailLower == request.resource.data.email.lower();
       allow update: if isAuthenticated() && (
         isOwner(userId) || 
         isPartner(userId) || 
         hasValidInviteCode(userId)
+      ) && (
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['displayNameLower', 'emailLower']) ||
+        (
+          request.resource.data.displayNameLower == request.resource.data.displayName.lower() &&
+          request.resource.data.emailLower == request.resource.data.email.lower()
+        )
       );
       allow delete: if isAuthenticated() && isOwner(userId);
 
@@ -57,6 +74,27 @@ service cloud.firestore {
           request.resource.data.code in get(/databases/$(database)/documents/users/$(userId)).data.inviteCodes
         );
       }
+    }
+
+    // Partner Requests collection
+    match /partnerRequests/{requestId} {
+      allow read: if isAuthenticated() && (
+        isRequestSender(resource.data) ||
+        isRequestRecipient(resource.data)
+      );
+      allow create: if isAuthenticated() && 
+        isRequestSender(request.resource.data) &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.expiresAt > request.time;
+      allow update: if isAuthenticated() && 
+        (isRequestSender(resource.data) || isRequestRecipient(resource.data)) &&
+        (
+          (resource.data.status == 'pending' && request.resource.data.status in ['accepted', 'rejected']) ||
+          (resource.data.status == request.resource.data.status)
+        );
+      allow delete: if isAuthenticated() && 
+        (isRequestSender(resource.data) || isRequestRecipient(resource.data));
     }
 
     // Topics collection

@@ -13,7 +13,7 @@ import {
   sendPasswordResetEmail
 } from 'firebase/auth';
 import { 
-  doc, 
+  doc,
   setDoc, 
   getDoc, 
   collection, 
@@ -159,6 +159,7 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [disconnectMessage, setDisconnectMessage] = useState(null);
+  const [pendingRequests, setPendingRequests] = useState([]);
   const auth = getAuth();
   const googleProvider = new GoogleAuthProvider();
 
@@ -170,6 +171,171 @@ export const AuthProvider = ({ children }) => {
   // Add connection state management
   const [connectionState, setConnectionState] = useState('checking');
   const connectionRetryCount = useRef(0);
+
+  // Add listener for pending requests
+  useEffect(() => {
+    if (!user) return;
+
+    const userRef = doc(db, 'users', user.uid);
+    const unsubscribe = onSnapshot(userRef, async (snapshot) => {
+      if (snapshot.exists()) {
+        const userData = snapshot.data();
+        if (userData.pendingRequests?.length > 0) {
+          // Fetch full request details
+          const requests = await Promise.all(
+            userData.pendingRequests.map(async (requestId) => {
+              const requestDoc = await getDoc(doc(db, 'partnerRequests', requestId));
+              if (requestDoc.exists()) {
+                const requestData = requestDoc.data();
+                // Only include pending requests that haven't expired
+                if (requestData.status === 'pending' && requestData.expiresAt.toDate() > new Date()) {
+                  return {
+                    id: requestDoc.id,
+                    ...requestData
+                  };
+                }
+              }
+              return null;
+            })
+          );
+          setPendingRequests(requests.filter(Boolean));
+        } else {
+          setPendingRequests([]);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Add searchUsers function
+  const searchUsers = async (searchTerm) => {
+    if (!searchTerm || searchTerm.length < 2) return [];
+    
+    try {
+      const usersRef = collection(db, 'users');
+      const searchTermLower = searchTerm.toLowerCase();
+      
+      // Get all users and filter client-side for better search
+      const usersSnapshot = await getDocs(usersRef);
+      const results = new Map();
+      
+      usersSnapshot.forEach((doc) => {
+        const userData = doc.data();
+        // Don't include current user or users who are already connected
+        if (doc.id !== user?.uid && !userData.partnerId) {
+          const displayName = userData.displayName || '';
+          const email = userData.email || '';
+          
+          // Case insensitive search on both display name and email
+          if (displayName.toLowerCase().includes(searchTermLower) || 
+              email.toLowerCase().includes(searchTermLower)) {
+            results.set(doc.id, {
+              id: doc.id,
+              displayName: userData.displayName,
+              email: userData.email
+            });
+          }
+        }
+      });
+      
+      return Array.from(results.values());
+    } catch (error) {
+      console.error('Error searching users:', error);
+      throw new Error('Failed to search for users. Please try again.');
+    }
+  };
+
+  // Add sendPartnerRequest function
+  const sendPartnerRequest = async (targetUserId) => {
+    if (!user) throw new Error('You must be logged in to send a partner request');
+    
+    try {
+      const batch = writeBatch(db);
+      
+      // Create the request document
+      const requestRef = doc(collection(db, 'partnerRequests'));
+      batch.set(requestRef, {
+        senderId: user.uid,
+        senderName: user.displayName,
+        recipientId: targetUserId,
+        status: 'pending',
+        createdAt: firestoreTimestamp(),
+        expiresAt: Timestamp.fromDate(new Date(Date.now() + 5 * 60 * 1000)) // 5 minutes expiry
+      });
+      
+      // Update the recipient's requests array
+      const recipientRef = doc(db, 'users', targetUserId);
+      batch.update(recipientRef, {
+        pendingRequests: arrayUnion(requestRef.id)
+      });
+      
+      await batch.commit();
+      return requestRef.id;
+    } catch (error) {
+      console.error('Error sending partner request:', error);
+      throw new Error('Failed to send partner request. Please try again.');
+    }
+  };
+
+  // Add acceptPartnerRequest function
+  const acceptPartnerRequest = async (requestId) => {
+    if (!user) throw new Error('You must be logged in to accept a partner request');
+    
+    try {
+      const requestDoc = await getDoc(doc(db, 'partnerRequests', requestId));
+      if (!requestDoc.exists()) {
+        throw new Error('Partner request not found');
+      }
+      
+      const request = requestDoc.data();
+      if (request.status !== 'pending') {
+        throw new Error('This request is no longer valid');
+      }
+      
+      if (request.recipientId !== user.uid) {
+        throw new Error('You are not authorized to accept this request');
+      }
+      
+      if (request.expiresAt.toDate() < new Date()) {
+        throw new Error('This request has expired');
+      }
+      
+      // Connect the partners using the existing connectPartner logic
+      const batch = writeBatch(db);
+      
+      // Update request status
+      const requestRef = doc(db, 'partnerRequests', requestId);
+      batch.update(requestRef, {
+        status: 'accepted',
+        acceptedAt: firestoreTimestamp()
+      });
+      
+      // Update both users
+      const senderRef = doc(db, 'users', request.senderId);
+      const recipientRef = doc(db, 'users', user.uid);
+      
+      batch.update(senderRef, {
+        partnerId: user.uid
+      });
+      
+      batch.update(recipientRef, {
+        partnerId: request.senderId,
+        pendingRequests: arrayRemove(requestId)
+      });
+      
+      await batch.commit();
+      
+      // Fetch and set partner data
+      const partnerDoc = await getDoc(senderRef);
+      if (partnerDoc.exists()) {
+        setPartner(partnerDoc.data());
+      }
+    } catch (error) {
+      console.error('Error accepting partner request:', error);
+      throw new Error('Failed to accept partner request. Please try again.');
+    }
+  };
 
   // Setup database listeners with improved connection handling
   const setupDatabaseListeners = async (user) => {
@@ -1035,7 +1201,11 @@ export const AuthProvider = ({ children }) => {
     error,
     isOnline,
     signInWithGoogle,
-    resetPassword
+    resetPassword,
+    searchUsers,
+    sendPartnerRequest,
+    acceptPartnerRequest,
+    pendingRequests
   };
 
   // Only show loading for initial auth check
