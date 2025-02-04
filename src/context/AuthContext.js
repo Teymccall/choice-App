@@ -544,35 +544,49 @@ export const AuthProvider = ({ children }) => {
 
   // Handle authentication errors
   const handleAuthError = (error) => {
+    console.error('Auth error:', error);
     setError(null);
+    let errorMessage = '';
+    
     switch (error.code) {
       case 'auth/user-not-found':
-        setError('No account found with this email address');
+        errorMessage = 'No account found with this email address.';
         break;
       case 'auth/wrong-password':
-        setError('Incorrect password');
+        errorMessage = 'Incorrect password. Please try again.';
         break;
       case 'auth/invalid-email':
-        setError('Invalid email address');
+        errorMessage = 'Invalid email address format.';
+        break;
+      case 'auth/user-disabled':
+        errorMessage = 'This account has been disabled.';
         break;
       case 'auth/email-already-in-use':
-        setError('An account already exists with this email address');
+        errorMessage = 'An account with this email already exists.';
+        break;
+      case 'auth/operation-not-allowed':
+        errorMessage = 'Email/password sign-in is not enabled.';
         break;
       case 'auth/weak-password':
-        setError('Password should be at least 6 characters');
+        errorMessage = 'Password should be at least 6 characters.';
         break;
       case 'auth/network-request-failed':
-        setError('Network error. Please check your internet connection');
+        errorMessage = 'Network error. Please check your internet connection.';
         break;
       case 'auth/too-many-requests':
-        setError('Too many attempts. Please try again later');
+        errorMessage = 'Too many failed attempts. Please try again later.';
         break;
-      case 'auth/popup-closed-by-user':
-        setError('Sign-in cancelled. Please try again');
+      case 'auth/invalid-credential':
+        errorMessage = 'Invalid login credentials. Please check your email and password.';
+        break;
+      case 'auth/invalid-login-credentials':
+        errorMessage = 'Invalid login credentials. Please check your email and password.';
         break;
       default:
-        setError(error.message || 'An error occurred during authentication');
+        errorMessage = error.message || 'An error occurred during authentication.';
     }
+    
+    setError(errorMessage);
   };
 
   // Add persistence for auth state
@@ -625,7 +639,9 @@ export const AuthProvider = ({ children }) => {
               email: user.email,
               displayName: user.displayName,
               createdAt: Timestamp.now(),
-              lastLogin: Timestamp.now()
+              lastLogin: Timestamp.now(),
+              displayNameLower: (user.displayName || '').toLowerCase(),
+              emailLower: user.email.toLowerCase()
             });
             setUser(user);
           }
@@ -726,49 +742,53 @@ export const AuthProvider = ({ children }) => {
   const signIn = async (email, password) => {
     try {
       setError(null);
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      await initializeUserData(userCredential.user);
+      setIsLoading(true);
+
+      // Trim the email to remove any accidental spaces
+      const trimmedEmail = email.trim();
       
-      // Show welcome alert after successful login
-      const welcomeMessage = `
-        <div class="space-y-2">
-          <p class="font-medium">🎉 Welcome to Choice!</p>
-          <p>This app is currently in development. Some features you should know about:</p>
-          <ul class="list-disc pl-5 space-y-1">
-            <li>Real-time chat and responses</li>
-            <li>Image and media sharing</li>
-            <li>Topic discussions with your partner</li>
-          </ul>
-          <p class="mt-2 text-sm">We're constantly improving the app. Thank you for being an early user!</p>
-        </div>
-      `;
+      // Set persistence first
+      await setPersistence(auth, browserLocalPersistence);
+      
+      // Attempt to sign in
+      const userCredential = await signInWithEmailAndPassword(auth, trimmedEmail, password);
+      const user = userCredential.user;
 
-      // Create and show the alert
-      const alertDiv = document.createElement('div');
-      alertDiv.className = 'fixed inset-0 flex items-center justify-center z-[100] bg-black/50';
-      alertDiv.innerHTML = `
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 transform transition-all">
-          <div class="p-6">
-            ${welcomeMessage}
-            <button class="mt-4 w-full bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors">
-              Got it!
-            </button>
-          </div>
-        </div>
-      `;
+      // Get user document in Firestore
+      const userRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userRef);
 
-      document.body.appendChild(alertDiv);
-
-      // Remove alert when clicked
-      alertDiv.addEventListener('click', (e) => {
-        if (e.target.tagName === 'BUTTON' || e.target === alertDiv) {
-          alertDiv.classList.add('opacity-0');
-          setTimeout(() => alertDiv.remove(), 150);
+      if (!userDoc.exists()) {
+        // Create the user document if it doesn't exist
+        await setDoc(userRef, {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName || '',
+          createdAt: Timestamp.now(),
+          lastLogin: Timestamp.now(),
+          displayNameLower: (user.displayName || '').toLowerCase(),
+          emailLower: user.email.toLowerCase()
+        });
+      } else {
+        try {
+          // Try to update last login
+          await updateDoc(userRef, {
+            lastLogin: Timestamp.now()
+          });
+        } catch (updateError) {
+          // If we can't update lastLogin, just log it and continue
+          console.warn('Could not update lastLogin:', updateError);
         }
-      });
+      }
 
+      // Initialize user data
+      await initializeUserData(user);
+      
+      setIsLoading(false);
       return userCredential;
     } catch (err) {
+      console.error('Sign in error:', err);
+      setIsLoading(false);
       handleAuthError(err);
       throw err;
     }

@@ -69,51 +69,30 @@ export default function Login() {
       setSuccess('');
       setIsConnecting(true);
 
-      // Set persistence to LOCAL before signing in
-      await setPersistence(auth, browserLocalPersistence);
+      // Use the context's login function
+      await login(email.trim(), password);
       
-      // Attempt sign in with retry logic
-      let retryCount = 0;
-      const maxRetries = 3;
-      
-      while (retryCount < maxRetries) {
-        try {
-          const userCredential = await signInWithEmailAndPassword(auth, email, password);
-          if (userCredential.user) {
-            // Save credentials if remember me is checked
-            if (rememberMe) {
-              cookieManager.saveAuthState(email, true);
-              cookieManager.recordLastLogin(email);
-            } else {
-              cookieManager.clearAuthState();
-            }
-            
-            navigate('/dashboard');
-            return;
-          }
-        } catch (error) {
-          retryCount++;
-          if (retryCount === maxRetries) {
-            throw error;
-          }
-          // Wait before retrying
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
+      // Save credentials if remember me is checked
+      if (rememberMe) {
+        cookieManager.saveAuthState(email, true);
+        cookieManager.recordLastLogin(email);
+      } else {
+        cookieManager.clearAuthState();
       }
+      
+      navigate('/dashboard');
     } catch (err) {
       console.error('Login error:', err);
       if (err.code === 'auth/network-request-failed') {
         setError('Network error. Please check your connection and try again.');
       } else if (err.code === 'auth/too-many-requests') {
         setError('Too many login attempts. Please try again later.');
-      } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+      } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
         setError('Invalid email or password.');
-      } else if (err.message === 'Connection timeout') {
-        setError('Connection timed out. Please check your internet and try again.');
-      } else if (err.message === 'No connection to database') {
-        setError('Unable to connect to the service. Please try again.');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('Invalid email format.');
       } else {
-        setError('Failed to log in. Please try again.');
+        setError('Failed to log in. Please check your credentials and try again.');
       }
       cookieManager.clearAuthState();
     } finally {
@@ -139,38 +118,38 @@ export default function Login() {
         const connectedRef = ref(rtdb, '.info/connected');
         await new Promise((resolve, reject) => {
           let resolved = false;
-          let cleanup = null;
+          let unsubscribe = null;
 
           // Setup timeout
           const timeoutId = setTimeout(() => {
             if (!resolved) {
               resolved = true;
-              if (cleanup) cleanup();
+              if (unsubscribe) unsubscribe();
               reject(new Error('Connection timeout'));
             }
           }, 10000);
 
           // Setup listener
-          cleanup = onValue(connectedRef, 
+          unsubscribe = onValue(connectedRef, 
             (snap) => {
-            if (!resolved) {
-              resolved = true;
+              if (!resolved) {
+                resolved = true;
                 clearTimeout(timeoutId);
-                cleanup();
-            if (snap.val() === true) {
-              resolve();
-            } else {
-              reject(new Error('No connection to database'));
+                if (unsubscribe) unsubscribe();
+                if (snap.val() === true) {
+                  resolve();
+                } else {
+                  reject(new Error('No connection to database'));
+                }
               }
-            }
             },
             (error) => {
-            if (!resolved) {
-              resolved = true;
+              if (!resolved) {
+                resolved = true;
                 clearTimeout(timeoutId);
-                cleanup();
-              reject(error);
-            }
+                if (unsubscribe) unsubscribe();
+                reject(error);
+              }
             }
           );
         });

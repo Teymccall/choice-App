@@ -69,38 +69,39 @@ const FloatingNav = () => {
         return;
       }
 
-      // Get the last checked timestamp for this specific partnership
+      // Get the last checked timestamp for topics
       const lastCheckedTopics = parseInt(
-        localStorage.getItem(`lastChecked_topics_${user.uid}_${partner.uid}`)
+        localStorage.getItem(`lastChecked_topics_${user.uid}`)
       ) || Date.now();
 
-      // Check for new topics
-      const newTopicsCount = Object.values(data).filter(topic => {
+      let newTopicsCount = 0;
+      let pendingResponsesCount = 0;
+
+      Object.entries(data).forEach(([topicId, topic]) => {
         // Only count topics that involve both current user and current partner
         const isRelevantTopic = (topic.createdBy === user.uid && topic.partnerId === partner.uid) ||
                                (topic.createdBy === partner.uid && topic.partnerId === user.uid);
         
-        return isRelevantTopic && 
-               topic.createdAt > lastCheckedTopics && 
-               topic.createdBy !== user.uid;
-      }).length;
+        if (!isRelevantTopic) return;
+
+        // Check for new topics
+        if (topic.createdAt > lastCheckedTopics && topic.createdBy === partner.uid) {
+          newTopicsCount++;
+        }
+
+        // Check for new responses
+        if (topic.responses?.[partner.uid]) {
+          const lastChecked = parseInt(localStorage.getItem(`lastChecked_${topicId}_${user.uid}`)) || 0;
+          const responseTime = topic.responses[partner.uid].timestamp;
+          
+          if (responseTime > lastChecked && !topic.responses[user.uid]) {
+            pendingResponsesCount++;
+          }
+        }
+      });
       
       setNewTopics(newTopicsCount);
-
-      // Check for new responses
-      const responsesCount = Object.values(data).filter(topic => {
-        // Only count responses for topics between current partners
-        const isRelevantTopic = (topic.createdBy === user.uid && topic.partnerId === partner.uid) ||
-                               (topic.createdBy === partner.uid && topic.partnerId === user.uid);
-        
-        if (!isRelevantTopic || !topic.responses || !topic.responses[partner.uid]) return false;
-        
-        const lastChecked = parseInt(localStorage.getItem(`lastChecked_${topic.id}_${user.uid}`)) || 0;
-        const partnerResponseTime = parseInt(topic.responses[partner.uid].timestamp);
-        return partnerResponseTime > lastChecked && !topic.responses[user.uid];
-      }).length;
-      
-      setPendingResponses(responsesCount);
+      setPendingResponses(pendingResponsesCount);
     });
 
     return () => unsubscribe();
@@ -120,14 +121,20 @@ const FloatingNav = () => {
 
       let unreadCount = 0;
       Object.entries(data).forEach(([topicId, chat]) => {
-        if (!chat?.messages) return;
+        if (!chat) return;
 
         const lastReadTimestamp = parseInt(localStorage.getItem(`lastRead_${topicId}_${user.uid}`)) || 0;
         const isTopicOpen = sessionStorage.getItem('openTopicChatId') === topicId;
         
-        if (isTopicOpen) return;
+        // Skip counting for open topics and update lastRead timestamp
+        if (isTopicOpen) {
+          localStorage.setItem(`lastRead_${topicId}_${user.uid}`, Date.now().toString());
+          return;
+        }
 
-        const unreadMessages = Object.values(chat.messages).filter(message => {
+        Object.entries(chat).forEach(([messageId, message]) => {
+          if (messageId === 'typing') return; // Skip typing status entries
+          
           const messageTimestamp = message.timestamp ? 
             (typeof message.timestamp === 'number' ? 
               message.timestamp : 
@@ -136,12 +143,12 @@ const FloatingNav = () => {
               Date.now()
             ) : Date.now();
 
-          return message.userId === partner.uid && 
-                 message.partnerId === user.uid && 
-                 messageTimestamp > lastReadTimestamp;
+          if (message.userId === partner.uid && 
+              message.partnerId === user.uid && 
+              messageTimestamp > lastReadTimestamp) {
+            unreadCount++;
+          }
         });
-
-        unreadCount += unreadMessages.length;
       });
 
       setUnreadChats(unreadCount);
@@ -150,13 +157,72 @@ const FloatingNav = () => {
     return () => unsubscribe();
   }, [user?.uid, partner?.uid]);
 
+  // Add effect to clear unread messages when viewing a topic
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const openTopicId = sessionStorage.getItem('openTopicChatId');
+      if (openTopicId && user?.uid) {
+        localStorage.setItem(`lastRead_${openTopicId}_${user.uid}`, Date.now().toString());
+        // Force a recount of unread messages
+        const chatsRef = ref(rtdb, 'topicChats');
+        onValue(chatsRef, (snapshot) => {
+          const data = snapshot.val();
+          if (!data) {
+            setUnreadChats(0);
+            return;
+          }
+
+          let unreadCount = 0;
+          Object.entries(data).forEach(([topicId, chat]) => {
+            if (!chat || topicId === openTopicId) return;
+
+            const lastReadTimestamp = parseInt(localStorage.getItem(`lastRead_${topicId}_${user.uid}`)) || 0;
+
+            Object.entries(chat).forEach(([messageId, message]) => {
+              if (messageId === 'typing') return;
+              
+              const messageTimestamp = message.timestamp ? 
+                (typeof message.timestamp === 'number' ? 
+                  message.timestamp : 
+                  message.timestamp?.toMillis?.() || 
+                  parseInt(message.timestamp) || 
+                  Date.now()
+                ) : Date.now();
+
+              if (message.userId === partner.uid && 
+                  message.partnerId === user.uid && 
+                  messageTimestamp > lastReadTimestamp) {
+                unreadCount++;
+              }
+            });
+          });
+
+          setUnreadChats(unreadCount);
+        }, { onlyOnce: true });
+      }
+    };
+
+    // Initial check
+    handleStorageChange();
+
+    // Listen for changes to sessionStorage
+    window.addEventListener('storage', handleStorageChange);
+    // Listen for custom event when topic is opened
+    window.addEventListener('topicChatOpened', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('topicChatOpened', handleStorageChange);
+    };
+  }, [user?.uid, partner?.uid]);
+
   // Clear badges when navigating to topics page
   useEffect(() => {
     if (location.pathname === '/topics' && user?.uid) {
-      localStorage.setItem(`lastChecked_topics_${user.uid}_${partner?.uid || 'none'}`, Date.now().toString());
+      localStorage.setItem(`lastChecked_topics_${user.uid}`, Date.now().toString());
       setNewTopics(0);
     }
-  }, [location.pathname, user?.uid, partner?.uid]);
+  }, [location.pathname, user?.uid]);
 
   if (!user) return null;
 
@@ -172,14 +238,16 @@ const FloatingNav = () => {
             : 'bg-primary-500 hover:bg-primary-600 dark:bg-primary-600'}`}
       >
         {isOpen ? (
-          <XMarkIcon className="w-5 h-5 text-white" />
+          <XMarkIcon className="h-5 w-5 text-white" />
         ) : (
           <div className="relative">
-            <Bars3Icon className="w-5 h-5 text-white" />
+            <Bars3Icon className="h-5 w-5 text-white" />
             {(unreadChats > 0 || pendingResponses > 0 || newTopics > 0) && (
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs 
-                rounded-full h-4 w-4 flex items-center justify-center">
-                {unreadChats + pendingResponses + newTopics}
+              <span className="absolute -top-2 -right-2 flex h-5 w-5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-5 w-5 bg-red-500 text-white text-xs items-center justify-center">
+                  {unreadChats + pendingResponses + newTopics}
+                </span>
               </span>
             )}
           </div>
@@ -198,29 +266,37 @@ const FloatingNav = () => {
             <Link
               key={item.path}
               to={item.path}
-              className={`flex items-center space-x-3 px-4 py-3
+              className={`flex items-center justify-between px-4 py-3 relative
                 ${location.pathname === item.path 
                   ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300' 
                   : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
               onClick={() => setIsOpen(false)}
             >
-              <item.icon className="w-5 h-5" />
-              <span>{item.name}</span>
+              <div className="flex items-center">
+                <item.icon className="h-5 w-5 mr-3" />
+                <span>{item.name}</span>
+              </div>
               {item.badge && (
-                <div className="ml-auto flex space-x-1">
-                  {unreadChats > 0 && (
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs">
-                      {unreadChats}
+                <div className="flex items-center space-x-2">
+                  {unreadChats > 0 && item.badge.messages && (
+                    <span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-100 dark:bg-blue-900/30">
+                      <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                        {unreadChats}
+                      </span>
                     </span>
                   )}
-                  {item.badge.responses && (
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 text-xs">
-                      {pendingResponses}
+                  {pendingResponses > 0 && item.badge.responses && (
+                    <span className="flex items-center justify-center h-5 w-5 rounded-full bg-yellow-100 dark:bg-yellow-900/30">
+                      <span className="text-xs font-medium text-yellow-600 dark:text-yellow-400">
+                        {pendingResponses}
+                      </span>
                     </span>
                   )}
-                  {item.badge.topics && (
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs">
-                      {newTopics}
+                  {newTopics > 0 && item.badge.topics && (
+                    <span className="flex items-center justify-center h-5 w-5 rounded-full bg-green-100 dark:bg-green-900/30">
+                      <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                        {newTopics}
+                      </span>
                     </span>
                   )}
                 </div>

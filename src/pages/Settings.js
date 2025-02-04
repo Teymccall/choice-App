@@ -27,6 +27,7 @@ import { updatePassword, updateProfile } from 'firebase/auth';
 import { cookieManager } from '../utils/cookieManager';
 import { auth } from '../firebase/config';
 import { requestNotificationPermission } from '../firebase/config';
+import ProfilePicture from '../components/ProfilePicture';
 
 const Settings = () => {
   const { user, partner, isOnline } = useAuth();
@@ -632,19 +633,15 @@ const Settings = () => {
         setSuccessMessage('No topics to clear');
         return;
       }
-
-      const getPairingId = (email1, email2) => {
-        const sortedEmails = [email1, email2].sort();
-        return `${sortedEmails[0]}_${sortedEmails[1]}`;
-      };
-
-      const userPairingId = partner ? getPairingId(user.email, partner.email) : null;
       
-      // Find and remove topics for this user's pairing
+      // Find and remove topics where the user is either creator or partner
       const batch = {};
       Object.entries(topics).forEach(([topicId, topic]) => {
-        if (topic.pairingId === userPairingId) {
+        if ((topic.createdBy === user.uid && topic.partnerId === partner?.uid) ||
+            (topic.createdBy === partner?.uid && topic.partnerId === user.uid)) {
           batch[`topics/${topicId}`] = null;
+          // Also clear associated chat messages
+          batch[`topicChats/${topicId}`] = null;
         }
       });
 
@@ -675,17 +672,22 @@ const Settings = () => {
             Profile Settings
           </h2>
           <div className="mt-4 space-y-4">
-                    <div>
+            {/* Add Profile Picture */}
+            <div className="flex justify-center">
+              <ProfilePicture size="lg" editable={isEditing} />
+            </div>
+            
+            <div>
               <label className="block text-sm font-medium">Display Name</label>
-                      <input
-                        type="text"
-                        value={profile.displayName}
+              <input
+                type="text"
+                value={profile.displayName}
                 onChange={(e) => setProfile({ ...profile, displayName: e.target.value })}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                 disabled={!isEditing}
-                      />
-                    </div>
-                <div>
+              />
+            </div>
+            <div>
               <label className="block text-sm font-medium">Email</label>
               <input
                 type="email"
@@ -693,7 +695,7 @@ const Settings = () => {
                 disabled
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-50"
               />
-                  </div>
+            </div>
             <div className="flex justify-end gap-2">
               {!isEditing ? (
                 <button
@@ -719,8 +721,8 @@ const Settings = () => {
                   </button>
                 </>
               )}
-                </div>
-              </div>
+            </div>
+          </div>
         </section>
 
         {/* Password Section */}

@@ -13,6 +13,7 @@ import {
   XMarkIcon,
   HashtagIcon,
   CheckCircleIcon,
+  PencilIcon,
 } from '@heroicons/react/24/outline';
 import { ref, onValue, push, update, serverTimestamp, get, set } from 'firebase/database';
 import { rtdb } from '../firebase/config';
@@ -34,60 +35,137 @@ const formatDate = (timestamp) => {
   return date.toLocaleDateString();
 };
 
-const TopicCard = ({ topic, onRespond, onDiscuss, unreadMessages }) => {
+const TopicCard = ({ topic, onRespond, onDiscuss, onEdit, onDelete, unreadMessages, onReady }) => {
   const { user, partner } = useAuth();
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedQuestion, setEditedQuestion] = useState(topic.question);
   const userResponse = topic.responses?.[user.uid]?.response;
   const partnerResponse = topic.responses?.[partner?.uid]?.response;
+  const userReady = topic.readyState?.[user.uid];
+  const partnerReady = topic.readyState?.[partner?.uid];
+  const bothReady = userReady && partnerReady;
   const formattedDate = formatDate(topic.createdAt);
   const partnerName = partner?.displayName || 'Your partner';
   const bothResponded = userResponse !== undefined && partnerResponse !== undefined;
-  const match = bothResponded && userResponse === partnerResponse;
-  
+  const canEdit = topic.createdBy === user.uid && !bothResponded;
+
+  const handleEdit = async () => {
+    if (editedQuestion.trim() === topic.question || !editedQuestion.trim()) {
+      setIsEditing(false);
+      setEditedQuestion(topic.question);
+      return;
+    }
+
+    await onEdit(topic.id, editedQuestion.trim());
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleEdit();
+    } else if (e.key === 'Escape') {
+      setIsEditing(false);
+      setEditedQuestion(topic.question);
+    }
+  };
+
   // Get response status message
   const getStatusMessage = () => {
-    if (!userResponse && !partnerResponse) {
+    if (!userReady && !partnerReady) {
       return (
         <div className="flex items-center text-sm text-blue-600 dark:text-blue-400">
           <div className="w-2 h-2 bg-blue-500 rounded-full mr-2" />
-          Make your choice!
+          Click ready when you want to make your choice!
         </div>
       );
     }
-    if (!userResponse && partnerResponse !== undefined) {
+    if (!userReady && partnerReady) {
       return (
         <div className="flex items-center text-sm text-blue-600 dark:text-blue-400">
           <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse" />
-          {partnerName} has made their choice - your turn!
+          {partnerName} is ready - click ready when you are!
         </div>
       );
     }
-    if (userResponse !== undefined && !partnerResponse) {
+    if (userReady && !partnerReady) {
       return (
         <div className="flex items-center text-sm text-green-600 dark:text-green-400">
           <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse" />
+          Waiting for {partnerName} to be ready...
+        </div>
+      );
+    }
+    if (bothReady && !userResponse) {
+      return (
+        <div className="flex items-center text-sm text-green-600 dark:text-green-400">
+          <div className="w-2 h-2 bg-green-500 rounded-full mr-2" />
+          Both ready - make your choice!
+        </div>
+      );
+    }
+    if (userResponse && !partnerResponse) {
+      return (
+        <div className="flex items-center text-sm text-blue-600 dark:text-blue-400">
+          <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse" />
           Waiting for {partnerName}'s decision...
+        </div>
+      );
+    }
+    if (bothResponded) {
+      return (
+        <div className="flex items-center text-sm text-green-600 dark:text-green-400">
+          <div className="w-2 h-2 bg-green-500 rounded-full mr-2" />
+          Both decisions made!
         </div>
       );
     }
     return null;
   };
-  
+
   return (
     <div className="bg-white dark:bg-black rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden transition-all duration-200 hover:shadow-md">
       {/* Header */}
       <div className="p-4">
         <div className="flex flex-col space-y-2">
           <div className="flex items-start justify-between">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white flex-1">
-              {topic.question}
-            </h3>
-            {bothResponded && (
-              <span className={`flex-shrink-0 ml-2 px-2 py-1 rounded-full text-sm font-medium ${
-                match ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
-                     : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-              }`}>
-                {match ? 'Match! 🎉' : 'Different choices'}
-              </span>
+            {isEditing ? (
+              <div className="flex-1 flex items-center space-x-2">
+                <input
+                  type="text"
+                  value={editedQuestion}
+                  onChange={(e) => setEditedQuestion(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onBlur={handleEdit}
+                  autoFocus
+                  className="flex-1 px-2 py-1 text-lg font-medium bg-transparent border-b-2 border-black dark:border-white focus:outline-none focus:border-primary-500 dark:text-white"
+                  placeholder="Enter topic question..."
+                />
+                <button
+                  onClick={() => {
+                    setIsEditing(false);
+                    setEditedQuestion(topic.question);
+                  }}
+                  className="p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex-1 flex items-start justify-between">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white flex-1">
+                  {topic.question}
+                </h3>
+                {canEdit && (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="ml-2 p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+                    title="Edit topic"
+                  >
+                    <PencilIcon className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             )}
           </div>
           
@@ -113,30 +191,43 @@ const TopicCard = ({ topic, onRespond, onDiscuss, unreadMessages }) => {
       {/* Response Status */}
       <div className="px-4 pb-4">
         {getStatusMessage()}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mt-2">
           <div className="flex items-center space-x-2">
-            <button
-              onClick={() => onRespond(topic.id, true)}
-              disabled={userResponse !== undefined}
-              className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 
-                ${userResponse === undefined 
-                  ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900 dark:text-green-200 dark:hover:bg-green-800'
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-500'}`}
-            >
-              <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
-              Yes
-            </button>
-            <button
-              onClick={() => onRespond(topic.id, false)}
-              disabled={userResponse !== undefined}
-              className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200
-                ${userResponse === undefined 
-                  ? 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900 dark:text-red-200 dark:hover:bg-red-800'
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-500'}`}
-            >
-              <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
-              No
-            </button>
+            {!userResponse && (
+              <>
+                {!bothReady && (
+                  <button
+                    onClick={() => onReady(topic.id, !userReady)}
+                    className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 
+                      ${userReady 
+                        ? 'bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-200 dark:hover:bg-blue-800'
+                        : 'bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'
+                      }`}
+                  >
+                    <CheckCircleIcon className="h-4 w-4 mr-1.5" />
+                    {userReady ? 'Ready!' : 'Ready?'}
+                  </button>
+                )}
+                {bothReady && (
+                  <>
+                    <button
+                      onClick={() => onRespond(topic.id, true)}
+                      className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900 dark:text-green-200 dark:hover:bg-green-800 transition-colors duration-200"
+                    >
+                      <HandThumbUpIcon className="h-4 w-4 mr-1.5" />
+                      Yes
+                    </button>
+                    <button
+                      onClick={() => onRespond(topic.id, false)}
+                      className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900 dark:text-red-200 dark:hover:bg-red-800 transition-colors duration-200"
+                    >
+                      <HandThumbDownIcon className="h-4 w-4 mr-1.5" />
+                      No
+                    </button>
+                  </>
+                )}
+              </>
+            )}
           </div>
 
           {/* Discuss Button */}
@@ -234,14 +325,34 @@ const Topics = () => {
           
           return isRelevantTopic;
         })
-        .map(([id, topic]) => ({
-          id,
-          ...topic,
-          responses: topic.responses || {},
-          status: topic.status || 'active'
-        }))
+        .map(([id, topic]) => {
+          // Process responses and update seen status
+          const responses = topic.responses || {};
+          
+          // If there's a response from partner that current user hasn't seen
+          if (responses[partner.uid] && !responses[partner.uid].seen?.[user.uid]) {
+            // Mark it as seen
+            const topicRef = ref(rtdb, `topics/${id}/responses/${partner.uid}/seen/${user.uid}`);
+            set(topicRef, true).catch(console.error);
+          }
+
+          return {
+            id,
+            ...topic,
+            responses,
+            status: topic.status || 'active',
+            // Add computed properties for UI
+            bothResponded: responses[user.uid]?.response !== undefined && 
+                         responses[partner.uid]?.response !== undefined,
+            match: topic.match || false
+          };
+        })
         .sort((a, b) => {
-          // Handle both timestamp types (number and server timestamp)
+          // Sort completed topics to the bottom
+          if (a.status === 'completed' && b.status !== 'completed') return 1;
+          if (a.status !== 'completed' && b.status === 'completed') return -1;
+          
+          // Then sort by timestamp
           const timeA = typeof a.createdAt === 'number' ? a.createdAt : a.createdAt?.toMillis?.() || 0;
           const timeB = typeof b.createdAt === 'number' ? b.createdAt : b.createdAt?.toMillis?.() || 0;
           return timeB - timeA;
@@ -255,10 +366,7 @@ const Topics = () => {
       setLoading(false);
     });
 
-    return () => {
-      setTopics([]);
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, [user?.uid, partner?.uid, isOnline]);
 
   useEffect(() => {
@@ -423,7 +531,7 @@ const Topics = () => {
       const snapshot = await get(topicRef);
       
       if (!snapshot.exists()) {
-        setError('Topic not found. It may have been deleted.');
+        setError('Topic not found');
         return;
       }
 
@@ -444,6 +552,12 @@ const Topics = () => {
         return;
       }
 
+      // Check if both users are ready
+      if (!topicData.readyState?.[user.uid] || !topicData.readyState?.[partner.uid]) {
+        setError('Both users must be ready before making a decision');
+        return;
+      }
+
       // Update the response
       const responseUpdate = {
         [`responses/${user.uid}`]: {
@@ -453,6 +567,14 @@ const Topics = () => {
         }
       };
 
+      // If both users have responded, update topic status and reset ready states
+      if (topicData.responses?.[partner.uid]?.response !== undefined) {
+        responseUpdate.status = 'completed';
+        responseUpdate.completedAt = serverTimestamp();
+        responseUpdate[`readyState/${user.uid}`] = false;
+        responseUpdate[`readyState/${partner.uid}`] = false;
+      }
+
       await update(topicRef, responseUpdate);
 
       // Send notification to partner
@@ -460,35 +582,20 @@ const Topics = () => {
         const notificationRef = ref(rtdb, `notifications/${partner.uid}`);
         const notificationData = {
           type: 'topic_response',
-          title: 'New Response',
-          body: `${user.displayName || 'Your partner'} has responded to "${topicData.question}"`,
-          senderName: user.displayName || 'Your partner',
+          title: 'New Decision',
+          body: `${user.displayName || 'Your partner'} has made their decision for "${topicData.question}"`,
           topicId: topicId,
-          timestamp: serverTimestamp(),
-          data: {
-            type: 'topic_response',
-            topicId: topicId
-          }
+          timestamp: serverTimestamp()
         };
         
         await update(notificationRef, {
           [Date.now()]: notificationData
         });
-
-        // Get partner's FCM tokens
-        const tokenRef = ref(rtdb, `users/${partner.uid}/fcmTokens`);
-        const tokenSnapshot = await get(tokenRef);
-        const tokens = tokenSnapshot.val();
-
-        if (tokens) {
-          console.log('Sending notification to partner tokens:', Object.keys(tokens));
-          // The actual sending of FCM messages should be handled by a Cloud Function
-        }
       }
 
     } catch (err) {
       console.error('Error updating response:', err);
-      setError('Failed to update response. Please try again later.');
+      setError('Failed to update response. Please try again.');
     }
   };
 
@@ -515,11 +622,120 @@ const Topics = () => {
     setSelectedTopic(topic);
   };
 
-  // Add cleanup when closing chat
   const handleCloseChat = () => {
     // Clear the stored topic ID
     sessionStorage.removeItem('openTopicChatId');
     setSelectedTopic(null);
+  };
+
+  const handleEditTopic = async (topicId, newQuestion) => {
+    if (!isOnline) {
+      setError('You must be online to edit topics');
+      return;
+    }
+
+    try {
+      const topicRef = ref(rtdb, `topics/${topicId}`);
+      const snapshot = await get(topicRef);
+      
+      if (!snapshot.exists()) {
+        setError('Topic not found');
+        return;
+      }
+
+      const topicData = snapshot.val();
+      
+      // Verify user is the creator
+      if (topicData.createdBy !== user.uid) {
+        setError('You can only edit topics you created');
+        return;
+      }
+
+      // Check if anyone has responded
+      if (topicData.responses && Object.keys(topicData.responses).length > 0) {
+        setError('Cannot edit topic after responses have been made');
+        return;
+      }
+
+      await update(topicRef, {
+        question: newQuestion,
+        updatedAt: serverTimestamp()
+      });
+
+      // Send notification to partner
+      if (partner?.uid) {
+        const notificationRef = ref(rtdb, `notifications/${partner.uid}`);
+        const notificationData = {
+          type: 'topic_edited',
+          title: 'Topic Edited',
+          body: `${user.displayName || 'Your partner'} has edited a topic`,
+          topicId: topicId,
+          timestamp: serverTimestamp()
+        };
+        
+        await update(notificationRef, {
+          [Date.now()]: notificationData
+        });
+      }
+
+    } catch (err) {
+      console.error('Error editing topic:', err);
+      setError('Failed to edit topic. Please try again.');
+    }
+  };
+
+  const handleDeleteTopic = async (topicId) => {
+    if (!isOnline) {
+      setError('You must be online to delete topics');
+      return;
+    }
+
+    try {
+      setError(null);
+      
+      // Get the current topic data
+      const topicRef = ref(rtdb, `topics/${topicId}`);
+      const snapshot = await get(topicRef);
+      
+      if (!snapshot.exists()) {
+        setError('Topic not found');
+        return;
+      }
+
+      const topicData = snapshot.val();
+      
+      // Verify user is the creator
+      if (topicData.createdBy !== user.uid) {
+        setError('You can only delete topics you created');
+        return;
+      }
+
+      // Delete the topic
+      await set(topicRef, null);
+
+      // Delete associated chat messages
+      const chatRef = ref(rtdb, `topicChats/${topicId}`);
+      await set(chatRef, null);
+
+      // Send notification to partner
+      if (partner?.uid) {
+        const notificationRef = ref(rtdb, `notifications/${partner.uid}`);
+        const notificationData = {
+          type: 'topic_deleted',
+          title: 'Topic Deleted',
+          body: `${user.displayName || 'Your partner'} has deleted the topic "${topicData.question}"`,
+          timestamp: serverTimestamp()
+        };
+        
+        await update(notificationRef, {
+          [Date.now()]: notificationData
+        });
+      }
+
+    } catch (err) {
+      console.error('Error deleting topic:', err);
+      setError('Failed to delete topic. Please try again.');
+    }
   };
 
   // eslint-disable-next-line no-unused-vars
@@ -530,6 +746,67 @@ const Topics = () => {
     ? topics
     : topics.filter(topic => topic?.category === selectedCategory)
   );
+
+  const handleReadyState = async (topicId, isReady) => {
+    if (!isOnline) {
+      setError('You must be online to update ready state');
+      return;
+    }
+
+    if (!user?.uid || !partner?.uid) {
+      setError('You must be connected with a partner to update ready state');
+      return;
+    }
+
+    try {
+      setError(null);
+      
+      // Get the current topic data
+      const topicRef = ref(rtdb, `topics/${topicId}`);
+      const snapshot = await get(topicRef);
+      
+      if (!snapshot.exists()) {
+        setError('Topic not found');
+        return;
+      }
+
+      const topicData = snapshot.val();
+      
+      // Validate topic belongs to current user pair
+      const isValidTopic = (topicData.createdBy === user.uid && topicData.partnerId === partner.uid) ||
+                          (topicData.createdBy === partner.uid && topicData.partnerId === user.uid);
+      
+      if (!isValidTopic) {
+        setError('You are not authorized to update this topic');
+        return;
+      }
+
+      // Update ready state
+      await update(topicRef, {
+        [`readyState/${user.uid}`]: isReady
+      });
+
+      // Send notification to partner
+      if (partner?.uid) {
+        const notificationRef = ref(rtdb, `notifications/${partner.uid}`);
+        const notificationData = {
+          type: 'ready_state',
+          title: 'Partner Ready State Updated',
+          body: `${user.displayName || 'Your partner'} is ${isReady ? 'ready' : 'not ready'} to decide on "${topicData.question}"`,
+          topicId: topicId,
+          timestamp: serverTimestamp()
+        };
+        
+        await update(notificationRef, {
+          [Date.now()]: notificationData
+        });
+      }
+
+    } catch (err) {
+      console.error('Error updating ready state:', err);
+      setError('Failed to update ready state. Please try again.');
+    }
+  };
 
   // Show message when not connected
   if (!isOnline || !partner?.email) {
@@ -542,35 +819,6 @@ const Topics = () => {
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
               Connect with a partner to see and discuss topics together
             </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 dark:border-primary-400 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading topics...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="bg-red-50 text-red-700 p-4 rounded-lg dark:bg-red-900 dark:text-red-300">
-            <p>Error loading topics: {error}</p>
-            <button 
-              onClick={() => setError(null)}
-              className="mt-2 text-sm text-red-600 dark:text-red-400 hover:text-red-800"
-            >
-              Try Again
-            </button>
           </div>
         </div>
       </div>
@@ -654,17 +902,20 @@ const Topics = () => {
               <p className="text-gray-500 dark:text-gray-400">No topics yet. Add one to get started!</p>
             </div>
           ) : (
-            topics
-              .filter(topic => selectedCategory === 'All' || topic.category === selectedCategory)
-              .map(topic => (
-                <TopicCard
-                  key={topic.id}
-                  topic={topic}
-                  onRespond={handleResponse}
-                  onDiscuss={handleTopicView}
-                  unreadMessages={unreadMessagesByTopic[topic.id]}
-                />
-              ))
+            filteredTopics.map(topic => (
+              <TopicCard
+                key={topic.id}
+                topic={topic}
+                user={user}
+                partner={partner}
+                onRespond={handleResponse}
+                onReady={handleReadyState}
+                onDiscuss={handleTopicView}
+                onEdit={handleEditTopic}
+                onDelete={handleDeleteTopic}
+                unreadMessages={unreadMessagesByTopic[topic.id]}
+              />
+            ))
           )}
         </div>
       </div>
@@ -680,4 +931,4 @@ const Topics = () => {
   );
 };
 
-export default Topics; 
+export default Topics;
