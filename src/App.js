@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import Layout from './components/Layout';
 import LoadingSpinner from './components/LoadingSpinner';
 import NotificationHandler from './components/NotificationHandler';
+import { Toaster } from 'react-hot-toast';
 
 // Lazy load components including PrivateRoute
 const PrivateRoute = React.lazy(() => import('./components/PrivateRoute'));
@@ -18,61 +19,85 @@ const Settings = React.lazy(() => import('./pages/Settings'));
 
 function App() {
   return (
-    <Router>
-      <AuthProvider>
-        <NotificationHandler />
-        <Layout>
-          <React.Suspense fallback={<LoadingSpinner />}>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route
-                path="/dashboard"
-                element={
-                  <React.Suspense fallback={<LoadingSpinner />}>
-                    <PrivateRoute>
-                      <Dashboard />
-                    </PrivateRoute>
-                  </React.Suspense>
-                }
-              />
-              <Route
-                path="/topics"
-                element={
-                  <React.Suspense fallback={<LoadingSpinner />}>
-                    <PrivateRoute>
-                      <Topics />
-                    </PrivateRoute>
-                  </React.Suspense>
-                }
-              />
-              <Route
-                path="/results"
-                element={
-                  <React.Suspense fallback={<LoadingSpinner />}>
-                    <PrivateRoute>
-                      <Results />
-                    </PrivateRoute>
-                  </React.Suspense>
-                }
-              />
-              <Route
-                path="/settings"
-                element={
-                  <React.Suspense fallback={<LoadingSpinner />}>
-                    <PrivateRoute>
-                      <Settings />
-                    </PrivateRoute>
-                  </React.Suspense>
-                }
-              />
-            </Routes>
-          </React.Suspense>
-        </Layout>
-      </AuthProvider>
-    </Router>
+    <>
+      <Toaster 
+        position="top-center"
+        toastOptions={{
+          duration: 3000,
+          style: {
+            background: '#363636',
+            color: '#fff',
+          },
+          success: {
+            duration: 3000,
+            style: {
+              background: '#2e7d32',
+            },
+          },
+          error: {
+            duration: 4000,
+            style: {
+              background: '#d32f2f',
+            },
+          },
+        }}
+      />
+      <Router>
+        <AuthProvider>
+          <NotificationHandler />
+          <Layout>
+            <React.Suspense fallback={<LoadingSpinner />}>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/signup" element={<Signup />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route
+                  path="/dashboard"
+                  element={
+                    <React.Suspense fallback={<LoadingSpinner />}>
+                      <PrivateRoute>
+                        <Dashboard />
+                      </PrivateRoute>
+                    </React.Suspense>
+                  }
+                />
+                <Route
+                  path="/topics"
+                  element={
+                    <React.Suspense fallback={<LoadingSpinner />}>
+                      <PrivateRoute>
+                        <Topics />
+                      </PrivateRoute>
+                    </React.Suspense>
+                  }
+                />
+                <Route
+                  path="/results"
+                  element={
+                    <React.Suspense fallback={<LoadingSpinner />}>
+                      <PrivateRoute>
+                        <Results />
+                      </PrivateRoute>
+                    </React.Suspense>
+                  }
+                />
+                <Route
+                  path="/settings"
+                  element={
+                    <React.Suspense fallback={<LoadingSpinner />}>
+                      <PrivateRoute>
+                        <Settings />
+                      </PrivateRoute>
+                    </React.Suspense>
+                  }
+                />
+              </Routes>
+            </React.Suspense>
+          </Layout>
+        </AuthProvider>
+      </Router>
+    </>
   );
 }
 

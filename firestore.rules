@@ -47,6 +47,10 @@ service cloud.firestore {
       return request.auth.uid == requestData.senderId;
     }
 
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
     // Users collection
     match /users/{userId} {
       allow read: if isAuthenticated();
@@ -78,23 +82,22 @@ service cloud.firestore {
 
     // Partner Requests collection
     match /partnerRequests/{requestId} {
-      allow read: if isAuthenticated() && (
-        isRequestSender(resource.data) ||
-        isRequestRecipient(resource.data)
-      );
-      allow create: if isAuthenticated() && 
-        isRequestSender(request.resource.data) &&
-        request.resource.data.status == 'pending' &&
-        request.resource.data.createdAt == request.time &&
-        request.resource.data.expiresAt > request.time;
-      allow update: if isAuthenticated() && 
-        (isRequestSender(resource.data) || isRequestRecipient(resource.data)) &&
-        (
-          (resource.data.status == 'pending' && request.resource.data.status in ['accepted', 'rejected']) ||
-          (resource.data.status == request.resource.data.status)
+      allow read: if isSignedIn();
+      allow update: if isSignedIn() 
+        && (
+          // Allow recipient to decline
+          (resource.data.recipientId == request.auth.uid 
+           && request.resource.data.status == 'declined'
+           && resource.data.status == 'pending')
+          ||
+          // Allow recipient to accept
+          (resource.data.recipientId == request.auth.uid 
+           && request.resource.data.status == 'accepted'
+           && resource.data.status == 'pending')
         );
-      allow delete: if isAuthenticated() && 
-        (isRequestSender(resource.data) || isRequestRecipient(resource.data));
+      allow create: if isSignedIn() 
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.status == 'pending';
     }
 
     // Topics collection

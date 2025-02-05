@@ -31,12 +31,8 @@ import ProfilePicture from './ProfilePicture';
 import { getRelationshipLevel, RELATIONSHIP_LEVELS } from '../utils/relationshipLevels';
 import ImageViewer from './ImageViewer';
 import Message from './Message';
-
-const formatTime = (timestamp) => {
-  if (!timestamp) return '';
-  const date = typeof timestamp === 'number' ? new Date(timestamp) : timestamp.toDate?.() || new Date(timestamp);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
+import { formatTime } from '../utils/dateUtils';
+import { toast } from 'react-hot-toast';
 
 const TopicChat = ({ topic, onClose }) => {
   const { user, partner, isOnline } = useAuth();
@@ -76,6 +72,7 @@ const TopicChat = ({ topic, onClose }) => {
   const [nextLevelProgress, setNextLevelProgress] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const topicInputRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -104,7 +101,7 @@ const TopicChat = ({ topic, onClose }) => {
   }, [topic?.id, user?.uid]);
 
   useEffect(() => {
-    if (!topic?.id || !partner?.uid || !user?.uid) return;
+    if (!topic?.id || !user?.uid) return;
 
     const chatRef = ref(rtdb, `topicChats/${topic.id}`);
     const deletedMessagesRef = ref(rtdb, `deletedMessages/${user.uid}/${topic.id}`);
@@ -117,49 +114,88 @@ const TopicChat = ({ topic, onClose }) => {
         return;
       }
 
-      // Get deleted messages for current user
-      const deletedSnapshot = await get(deletedMessagesRef);
-      const deletedMessages = deletedSnapshot.val() || {};
+      try {
+        // Get deleted messages for current user
+        const deletedSnapshot = await get(deletedMessagesRef);
+        const deletedMessages = deletedSnapshot.val() || {};
 
-      // Update messages list
-      const messagesList = Object.entries(data)
-        .map(([id, message]) => ({
-          id,
-          ...message,
-          timestamp: message.timestamp || Date.now(),
-          isDeleted: !!deletedMessages[id] // Mark message as deleted if it exists in deletedMessages
-        }))
-        .filter(message => 
-          (message.userId === user.uid && message.partnerId === partner.uid) ||
-          (message.userId === partner.uid && message.partnerId === user.uid)
-        )
-        .sort((a, b) => {
-          const timestampA = typeof a.timestamp === 'number' ? a.timestamp : a.timestamp?.toMillis?.() || 0;
-          const timestampB = typeof b.timestamp === 'number' ? b.timestamp : b.timestamp?.toMillis?.() || 0;
-          return timestampA - timestampB;
+        // Update messages list with null checks for partner
+        const messagesList = Object.entries(data)
+          .map(([id, message]) => ({
+            id,
+            ...message,
+            timestamp: message.timestamp || Date.now(),
+            isDeleted: !!deletedMessages[id],
+            sent: true,
+            delivered: message.delivered || false,
+            read: message.read || false
+          }))
+          .filter(message => 
+            // Only show messages that belong to the current user or their partner
+            message.userId === user.uid || (partner && message.userId === partner.uid)
+          )
+          .sort((a, b) => {
+            const timestampA = typeof a.timestamp === 'number' ? a.timestamp : a.timestamp?.toMillis?.() || 0;
+            const timestampB = typeof b.timestamp === 'number' ? b.timestamp : b.timestamp?.toMillis?.() || 0;
+            return timestampA - timestampB;
+          });
+
+        setMessages(messagesList);
+        setLoading(false);
+        setTimeout(scrollToBottom, 100);
+
+        // Only mark messages as read if partner exists
+        if (partner?.uid) {
+          const unreadMessages = messagesList
+            .filter(msg => msg.userId === partner.uid && !msg.read)
+            .map(msg => msg.id);
+
+          if (unreadMessages.length > 0) {
+            const updates = {};
+            unreadMessages.forEach(messageId => {
+              updates[`${messageId}/read`] = true;
+              updates[`${messageId}/readAt`] = serverTimestamp();
+            });
+            await update(chatRef, updates);
+          }
+        }
+      } catch (error) {
+        console.error('Error processing messages:', error);
+        toast.error('Error loading messages. Please try again.');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [topic?.id, user?.uid, partner?.uid]);
+
+  // Add effect to mark messages as delivered when online
+  useEffect(() => {
+    if (!isOnline || !topic?.id || !partner?.uid || !user?.uid) return;
+
+    const chatRef = ref(rtdb, `topicChats/${topic.id}`);
+    const query = ref(rtdb, `topicChats/${topic.id}`);
+    
+    const unsubscribe = onValue(query, async (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      // Find undelivered messages from partner
+      const undeliveredMessages = Object.entries(data)
+        .filter(([_, msg]) => msg.userId === partner.uid && !msg.delivered)
+        .map(([id]) => id);
+
+      if (undeliveredMessages.length > 0) {
+        const updates = {};
+        undeliveredMessages.forEach(messageId => {
+          updates[`${messageId}/delivered`] = true;
+          updates[`${messageId}/deliveredAt`] = serverTimestamp();
         });
-
-      setMessages(messagesList);
-      setLoading(false);
-      setTimeout(scrollToBottom, 100);
+        await update(chatRef, updates);
+      }
     });
 
-    // Listen for changes in deleted messages
-    const deletedUnsubscribe = onValue(deletedMessagesRef, (snapshot) => {
-      const deletedData = snapshot.val() || {};
-      setMessages(prevMessages => 
-        prevMessages.map(msg => ({
-          ...msg,
-          isDeleted: !!deletedData[msg.id]
-        }))
-      );
-    });
-
-    return () => {
-      unsubscribe();
-      deletedUnsubscribe();
-    };
-  }, [topic?.id, partner?.uid, user?.uid]);
+    return () => unsubscribe();
+  }, [isOnline, topic?.id, partner?.uid, user?.uid]);
 
   useEffect(() => {
     if (!user?.uid || !topic?.id) {
@@ -211,14 +247,6 @@ const TopicChat = ({ topic, onClose }) => {
   }, [user?.uid, topic?.id, partner?.uid]);
 
   const updateTypingStatus = (typing) => {
-    console.log('Attempting to update typing status:', {
-      typing,
-      hasUser: !!user?.uid,
-      hasTopicId: !!topic?.id,
-      isOnline,
-      partnerId: partner?.uid
-    });
-
     if (!user?.uid || !topic?.id || !isOnline) {
       console.log('Cannot update typing status:', { 
         hasUser: !!user?.uid, 
@@ -245,26 +273,6 @@ const TopicChat = ({ topic, onClose }) => {
     });
   };
 
-  const handleTyping = () => {
-    setIsTyping(true);
-    
-    // Update typing status in the database
-    const typingRef = ref(rtdb, `typing/${topic.id}/${user.uid}`);
-    set(typingRef, true);
-
-    // Clear previous timeout
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-    }
-
-    // Set new timeout to clear typing status
-    typingTimeoutRef.current = setTimeout(async () => {
-      setIsTyping(false);
-      const typingRef = ref(rtdb, `typing/${topic.id}/${user.uid}`);
-      await set(typingRef, false);
-    }, 3000); // Stop typing indicator after 3 seconds of no input
-  };
-
   const handleMessageChange = (e) => {
     const message = e.target.value;
     setNewMessage(message);
@@ -280,13 +288,19 @@ const TopicChat = ({ topic, onClose }) => {
       clearTimeout(typingTimeoutRef.current);
     }
 
-    console.log('Message changed, setting typing status to true');
-    updateTypingStatus(true);
+    // Only update typing status if there's actual content
+    if (message.trim()) {
+      console.log('Message changed, setting typing status to true');
+      updateTypingStatus(true);
 
-    typingTimeoutRef.current = setTimeout(() => {
-      console.log('Typing timeout, setting typing status to false');
+      typingTimeoutRef.current = setTimeout(() => {
+        console.log('Typing timeout, setting typing status to false');
+        updateTypingStatus(false);
+      }, 3000); // Increased to 3 seconds for better UX
+    } else {
+      // If message is empty, clear typing status immediately
       updateTypingStatus(false);
-    }, 2000);
+    }
   };
 
   const handleMediaClick = (e) => {
@@ -414,37 +428,64 @@ const TopicChat = ({ topic, onClose }) => {
         await handleEditMessage(editingMessage.id, trimmedMessage);
       }
       cancelEditing();
-    } else if (trimmedMessage || audioChunksRef.current.length > 0) {
+    } else {
       // Handle new message
       if ((!trimmedMessage && !selectedFile) || uploadingMedia) return;
 
       try {
+        // Clear input and states immediately for better UX
+        const messageToSend = trimmedMessage;
+        setNewMessage('');
+        const replyingToRef = replyingTo;
+        setReplyingTo(null);
+        localStorage.removeItem(`messageDraft_${topic.id}_${user?.uid}`);
+        
+        // Reset textarea height
+        if (inputRef.current) {
+          inputRef.current.style.height = '42px';
+        }
+
         const messageData = {
-          text: trimmedMessage,
+          text: messageToSend || '', // Ensure text is never undefined
           userId: user.uid,
           partnerId: partner.uid,
           userName: user.displayName || 'Anonymous',
           userPhotoURL: user.photoURL,
           userDisplayName: user.displayName || 'Anonymous',
           timestamp: serverTimestamp(),
+          sent: true,
+          delivered: false,
+          read: false,
           edited: false
         };
 
-        if (replyingTo) {
+        if (replyingToRef) {
+          // Only include necessary properties in replyTo
           messageData.replyTo = {
-            id: replyingTo.id,
-            text: replyingTo.text,
-            userId: replyingTo.userId,
-            userPhotoURL: replyingTo.userPhotoURL,
-            userDisplayName: replyingTo.userDisplayName,
-            media: replyingTo.media
+            id: replyingToRef.id,
+            text: replyingToRef.text || '',
+            userId: replyingToRef.userId,
+            userDisplayName: replyingToRef.userDisplayName
           };
+          
+          // Only add media if it exists
+          if (replyingToRef.media) {
+            messageData.replyTo.media = {
+              type: replyingToRef.media.type,
+              url: replyingToRef.media.url
+            };
+          }
         }
 
         let mediaData = null;
         if (selectedFile) {
           setUploadingMedia(true);
           mediaData = await uploadMedia(selectedFile);
+          setSelectedFile(null);
+          setPreviewUrl(null);
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
         }
 
         const chatRef = ref(rtdb, `topicChats/${topic.id}`);
@@ -465,7 +506,8 @@ const TopicChat = ({ topic, onClose }) => {
 
         if (isOnline) {
           update(ref(rtdb, `topicChats/${topic.id}/${newMessageRef.key}`), {
-            delivered: true
+            delivered: true,
+            deliveredAt: serverTimestamp()
           });
         }
 
@@ -476,21 +518,11 @@ const TopicChat = ({ topic, onClose }) => {
         const currentCount = countSnapshot.val() || 0;
         await set(messageCountRef, currentCount + 1);
 
-        // Clear input and states
-        setNewMessage('');
-        setReplyingTo(null);
-        setSelectedFile(null);
-        setPreviewUrl(null);
         setUploadingMedia(false);
-        localStorage.removeItem(`messageDraft_${topic.id}_${user?.uid}`);
         
-        // Reset textarea height
-        if (inputRef.current) {
-          inputRef.current.style.height = '42px';
-        }
       } catch (error) {
         console.error('Error sending message:', error);
-        setError('Failed to send message. Please try again.');
+        toast.error('Failed to send message. Please try again.');
         setUploadingMedia(false);
       }
     }
@@ -506,16 +538,32 @@ const TopicChat = ({ topic, onClose }) => {
 
   const handleDeleteMessage = async (messageId, deleteForEveryone) => {
     try {
+      const loadingToast = toast.loading('Deleting message...');
+      
       const chatRef = ref(rtdb, `topicChats/${topic.id}/${messageId}`);
+      const messageSnapshot = await get(chatRef);
+      
+      if (!messageSnapshot.exists()) {
+        toast.dismiss(loadingToast);
+        toast.error('Message not found');
+        return;
+      }
+
+      const messageData = messageSnapshot.val();
+      
+      if (deleteForEveryone && messageData.userId !== user.uid) {
+        toast.dismiss(loadingToast);
+        toast.error('You can only delete your own messages for everyone');
+        return;
+      }
       
       if (deleteForEveryone) {
-        // Instead of removing, update the message to mark it as deleted for everyone
         await update(chatRef, {
           deletedForEveryone: true,
-          deletedAt: serverTimestamp(),
-          deletedBy: user.uid
+          deletedBy: user.uid,
+          deletedAt: serverTimestamp()
         });
-        // Update local state immediately
+        
         setMessages(prevMessages => 
           prevMessages.map(msg => 
             msg.id === messageId 
@@ -523,13 +571,13 @@ const TopicChat = ({ topic, onClose }) => {
               : msg
           )
         );
+        
+        toast.dismiss(loadingToast);
+        toast.success('Message deleted for everyone');
       } else {
-        // Add this message ID to user's deleted messages
-        const userDeletedRef = ref(rtdb, `deletedMessages/${user.uid}/${topic.id}`);
-        await update(userDeletedRef, {
-          [messageId]: serverTimestamp()
-        });
-        // Update local state immediately
+        const userDeletedRef = ref(rtdb, `deletedMessages/${user.uid}/${topic.id}/${messageId}`);
+        await set(userDeletedRef, serverTimestamp());
+        
         setMessages(prevMessages => 
           prevMessages.map(msg => 
             msg.id === messageId 
@@ -537,16 +585,20 @@ const TopicChat = ({ topic, onClose }) => {
               : msg
           )
         );
+        
+        toast.dismiss(loadingToast);
+        toast.success('Message deleted for you');
       }
     } catch (error) {
       console.error('Error deleting message:', error);
-      setError('Failed to delete message. Please try again.');
-      setTimeout(() => setError(null), 3000);
+      toast.error('Failed to delete message. Please try again.');
     }
   };
 
   const handleEditMessage = async (messageId, newText) => {
     try {
+      const loadingToast = toast.loading('Saving changes...');
+      
       const messageRef = ref(rtdb, `topicChats/${topic.id}/${messageId}`);
       await update(messageRef, {
         text: newText,
@@ -554,7 +606,6 @@ const TopicChat = ({ topic, onClose }) => {
         editedAt: serverTimestamp()
       });
       
-      // Update local state to reflect the edit immediately
       setMessages(prevMessages => 
         prevMessages.map(msg => 
           msg.id === messageId 
@@ -562,10 +613,12 @@ const TopicChat = ({ topic, onClose }) => {
             : msg
         )
       );
+      
+      toast.dismiss(loadingToast);
+      toast.success('Message updated successfully');
     } catch (error) {
       console.error('Error editing message:', error);
-      setError('Failed to edit message. Please try again.');
-      setTimeout(() => setError(null), 3000);
+      toast.error('Failed to edit message. Please try again.');
     }
   };
 
@@ -628,8 +681,8 @@ const TopicChat = ({ topic, onClose }) => {
           }
         } catch (error) {
           console.error('Error sending voice message:', error);
-          setError('Failed to send voice message. Please try again.');
-          setTimeout(() => setError(null), 3000);
+          toast.error('Failed to send voice message. Please try again.');
+          setTimeout(() => toast.dismiss(), 3000);
         } finally {
           setUploadingMedia(false);
           // Clean up
@@ -651,8 +704,8 @@ const TopicChat = ({ topic, onClose }) => {
 
     } catch (error) {
       console.error('Error starting recording:', error);
-      setError('Could not access microphone. Please check your permissions.');
-      setTimeout(() => setError(null), 3000);
+      toast.error('Could not access microphone. Please check your permissions.');
+      setTimeout(() => toast.dismiss(), 3000);
     }
   };
 
@@ -682,31 +735,26 @@ const TopicChat = ({ topic, onClose }) => {
     };
   }, [isRecording]);
 
-  // Add this useEffect for keyboard handling
+  // Add this useEffect for mobile viewport handling
   useEffect(() => {
-    const handleResize = () => {
-      // Only update if we're on mobile
-      if (window.innerWidth <= 768) {
-        // Get actual viewport height
-        const vh = window.innerHeight;
-        document.documentElement.style.setProperty('--chat-height', `${vh}px`);
-      }
+    const setVH = () => {
+      // First we get the viewport height and we multiple it by 1% to get a value for a vh unit
+      const vh = window.innerHeight * 0.01;
+      // Then we set the value in the --vh custom property to the root of the document
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
     };
 
-    // Initial setup
-    handleResize();
+    // Initial set
+    setVH();
 
     // Add event listeners
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('focusin', (e) => {
-      if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
-        // When keyboard opens, use window.innerHeight
-        document.documentElement.style.setProperty('--chat-height', `${window.innerHeight}px`);
-      }
-    });
+    window.addEventListener('resize', setVH);
+    window.addEventListener('orientationchange', setVH);
 
+    // Cleanup
     return () => {
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('resize', setVH);
+      window.removeEventListener('orientationchange', setVH);
     };
   }, []);
 
@@ -761,54 +809,121 @@ const TopicChat = ({ topic, onClose }) => {
     return () => unsubscribe();
   }, [topic?.id]);
 
+  // Add this effect to listen for topic deletion
+  useEffect(() => {
+    if (!topic?.id) return;
+
+    // Listen for topic deletion
+    const topicRef = ref(rtdb, `topics/${topic.id}`);
+    const unsubscribe = onValue(topicRef, (snapshot) => {
+      if (!snapshot.exists() && !loading) {
+        // Topic was deleted, close the chat
+        onClose();
+        // Optionally show a message
+        setError('This topic has been deleted');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [topic?.id, loading, onClose]);
+
   const handleDeleteTopic = async () => {
     if (!isOnline || !user?.uid) {
-      setError('You must be online to delete this topic');
+      toast.error('You must be online to delete this topic');
       return;
     }
 
     try {
-      // Delete the topic
+      // Show loading toast
+      const loadingToast = toast.loading('Deleting topic...');
+
+      // Delete the topic first
       const topicRef = ref(rtdb, `topics/${topic.id}`);
       await remove(topicRef);
 
-      // Delete associated chat messages
+      // Then delete associated chat messages
       const chatRef = ref(rtdb, `topicChats/${topic.id}`);
       await remove(chatRef);
+
+      // Delete any associated deleted messages records
+      const deletedMessagesRef = ref(rtdb, `deletedMessages/${user.uid}/${topic.id}`);
+      await remove(deletedMessagesRef);
+      
+      const partnerDeletedMessagesRef = ref(rtdb, `deletedMessages/${partner.uid}/${topic.id}`);
+      await remove(partnerDeletedMessagesRef);
+
+      // Delete any typing indicators
+      const typingRef = ref(rtdb, `typing/${topic.id}`);
+      await remove(typingRef);
+
+      // Dismiss loading toast and show success
+      toast.dismiss(loadingToast);
+      toast.success('Topic deleted successfully');
 
       // Close the chat after deletion
       onClose();
     } catch (error) {
       console.error('Error deleting topic:', error);
-      setError('Failed to delete topic. Please try again.');
+      toast.error('Failed to delete topic. Please try again.');
     }
   };
 
   const handleEditTopic = async (newQuestion) => {
     if (!isOnline || !user?.uid) {
-      setError('You must be online to edit this topic');
+      toast.error('You must be online to edit this topic');
+      return;
+    }
+
+    if (!newQuestion?.trim()) {
+      toast.error('Topic question cannot be empty');
       return;
     }
 
     try {
+      const loadingToast = toast.loading('Saving changes...');
+      
       const topicRef = ref(rtdb, `topics/${topic.id}`);
       await update(topicRef, {
-        question: newQuestion,
+        question: newQuestion.trim(),
         updatedAt: serverTimestamp()
       });
+      
+      toast.dismiss(loadingToast);
+      toast.success('Topic updated successfully');
       setIsEditing(false);
     } catch (error) {
       console.error('Error editing topic:', error);
-      setError('Failed to edit topic. Please try again.');
+      toast.error('Failed to edit topic. Please try again.');
     }
   };
+
+  // Add a new function to handle the save button click
+  const handleSaveEdit = () => {
+    const newQuestion = topicInputRef.current?.value;
+    if (newQuestion) {
+      handleEditTopic(newQuestion);
+    } else {
+      toast.error('Topic question cannot be empty');
+    }
+  };
+
+  // Add a disconnection notice component
+  const DisconnectionNotice = () => (
+    <div className="absolute top-0 left-0 right-0 bg-yellow-500 text-white px-4 py-2 text-center">
+      Partner disconnected. Some features may be limited.
+    </div>
+  );
 
   if (loading) {
     return <div className="text-center py-4">Loading messages...</div>;
   }
 
   return (
-    <div className="fixed inset-0 bg-[#efeae2] dark:bg-[#0b141a] z-50 flex flex-col h-[var(--chat-height)] max-h-[100%]">
+    <div 
+      className="fixed inset-0 bg-[#efeae2] dark:bg-[#0b141a] z-50 flex flex-col" 
+      style={{ height: 'calc(var(--vh, 1vh) * 100)' }}
+    >
+      {!partner && <DisconnectionNotice />}
       {/* Enhanced Header with Profile Display and Topic */}
       <div className="flex-none bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db] dark:border-[#2f3b44]">
         {/* Topic Banner */}
@@ -839,30 +954,41 @@ const TopicChat = ({ topic, onClose }) => {
           {isEditing ? (
             <div className="flex items-center space-x-2 mt-0.5">
               <input
+                ref={topicInputRef}
                 type="text"
                 defaultValue={topic.question}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
-                    handleEditTopic(e.target.value);
+                    e.preventDefault();
+                    handleSaveEdit();
                   } else if (e.key === 'Escape') {
+                    e.preventDefault();
                     setIsEditing(false);
                   }
                 }}
-                onBlur={(e) => handleEditTopic(e.target.value)}
-                autoFocus
                 className="flex-1 bg-transparent text-[13px] text-white opacity-90 border-b border-white/30 focus:border-white focus:outline-none px-0 py-0.5"
+                autoFocus
+                placeholder="Enter topic question..."
               />
+              <button
+                onClick={handleSaveEdit}
+                className="p-1 hover:bg-white/10 rounded-full transition-colors"
+                title="Save"
+              >
+                <CheckIcon className="h-4 w-4 text-white" />
+              </button>
               <button
                 onClick={() => setIsEditing(false)}
                 className="p-1 hover:bg-white/10 rounded-full transition-colors"
+                title="Cancel"
               >
-                <XMarkIcon className="h-4 w-4" />
+                <XMarkIcon className="h-4 w-4 text-white" />
               </button>
             </div>
           ) : (
-          <p className="text-[13px] opacity-90 mt-0.5 leading-tight line-clamp-2">
-            {topic.question} ({messageCount} messages)
-          </p>
+            <p className="text-[13px] opacity-90 mt-0.5 leading-tight line-clamp-2">
+              {topic.question} ({messageCount} messages)
+            </p>
           )}
         </div>
 
@@ -923,14 +1049,27 @@ const TopicChat = ({ topic, onClose }) => {
       </div>
 
       {/* Messages - adjust padding and spacing */}
-      <div className="flex-1 overflow-y-auto min-h-0 px-[3%] py-2 space-y-1">
+      <div 
+        className="messages-container flex-1 overflow-y-auto min-h-0 px-[3%] py-2 space-y-1 transition-all duration-200"
+        style={{ 
+          height: '100%',
+          maxHeight: 'calc(100% - 120px)', // Account for header and input area
+          willChange: 'backdrop-filter'
+        }}
+      >
           {messages.map((message) => (
             <Message
               key={message.id}
               message={message}
               isOwnMessage={message.userId === user.uid}
               user={user}
-              onReply={handleReply}
+            onReply={(msg) => {
+              handleReply(msg);
+              // Scroll to bottom with a slight delay to ensure the UI has updated
+              setTimeout(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }, 100);
+            }}
               onImageClick={setViewingImage}
               messageRefs={messageRefs}
               onDelete={handleDeleteMessage}
@@ -951,8 +1090,13 @@ const TopicChat = ({ topic, onClose }) => {
           <div ref={messagesEndRef} />
         </div>
 
-      {/* Input area - optimize for mobile */}
-      <div className="flex-none bg-[#f0f2f5] dark:bg-[#202c33] px-2 py-2 relative">
+      {/* Input area with Media Preview */}
+      <div 
+        className="flex-none bg-[#f0f2f5] dark:bg-[#202c33] relative"
+        style={{ 
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+        }}
+      >
         {editingMessage && (
           <div className="absolute left-0 right-0 -top-10 bg-blue-500 dark:bg-blue-600 px-4 py-2 flex items-center justify-between text-white">
             <span className="text-sm">Editing message</span>
@@ -964,28 +1108,71 @@ const TopicChat = ({ topic, onClose }) => {
             </button>
           </div>
         )}
-        {replyingTo && !editingMessage && (
-          <div className="flex items-center justify-between bg-[#fff] dark:bg-[#2a3942] px-3 py-2 -mb-1 mx-1 rounded-t-lg">
-              <div className="flex items-start space-x-2 min-w-0 flex-1">
-                <div className="w-0.5 h-full bg-[#00a884] self-stretch flex-none"/>
-                <div className="flex flex-col min-w-0 py-0.5">
-                <span className="text-[#00a884] dark:text-[#00a884] text-[12px] font-medium">
-                    {replyingTo.userId === user.uid ? 'You' : 'Partner'}
-                  </span>
-                <span className="text-[#667781] dark:text-[#8696a0] text-[12px] truncate">
-                    {replyingTo.text || 'Media message'}
-                  </span>
+        
+        {/* Media Preview - Moved to top */}
+        {selectedFile && (
+          <div className="px-3 py-2 bg-white dark:bg-[#2a3942] border-b border-[#e9edef] dark:border-[#3b4a54]">
+            <div className="flex items-center">
+              {selectedFile.type.startsWith('image/') ? (
+                <div className="w-12 h-12 rounded-md overflow-hidden bg-black/5 dark:bg-white/5 flex-shrink-0">
+                  <img
+                    src={previewUrl}
+                    alt="Selected media"
+                    className="w-full h-full object-cover"
+                  />
                 </div>
+              ) : (
+                <div className="w-12 h-12 rounded-md bg-black/5 dark:bg-white/5 flex items-center justify-center flex-shrink-0">
+                  <DocumentIcon className="h-6 w-6 text-[#54656f] dark:text-[#aebac1]" />
+                </div>
+              )}
+              <div className="ml-3 flex-1 min-w-0">
+                <p className="text-[15px] text-[#111b21] dark:text-[#e9edef] truncate">
+                  {selectedFile.name}
+                </p>
+                <p className="text-[13px] text-[#667781] dark:text-[#8696a0]">
+                  {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                </p>
               </div>
-              <button 
-                onClick={() => setReplyingTo(null)} 
-                className="p-1 -mr-1 text-[#667781] dark:text-[#8696a0] hover:text-[#3b4a54] dark:hover:text-[#e9edef] flex-none"
+              <button
+                onClick={() => {
+                  setSelectedFile(null);
+                  setPreviewUrl(null);
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                  }
+                }}
+                className="ml-3 p-1 text-[#54656f] hover:text-[#3b4a54] dark:text-[#aebac1] dark:hover:text-[#e9edef] rounded-full hover:bg-black/5 dark:hover:bg-white/5"
               >
-                <XMarkIcon className="h-5 w-5" />
+                <XMarkIcon className="h-6 w-6" />
               </button>
             </div>
-          )}
-        <div className="flex items-end space-x-2">
+          </div>
+        )}
+
+        {replyingTo && !editingMessage && (
+          <div className="flex items-center justify-between bg-[#fff] dark:bg-[#2a3942] px-3 py-2 border-b border-[#e9edef] dark:border-[#3b4a54]">
+            <div className="flex items-start space-x-2 min-w-0 flex-1">
+              <div className="w-0.5 h-full bg-[#00a884] self-stretch flex-none"/>
+              <div className="flex flex-col min-w-0 py-0.5">
+                <span className="text-[#00a884] dark:text-[#00a884] text-[12px] font-medium">
+                  {replyingTo.userId === user.uid ? 'You' : 'Partner'}
+                </span>
+                <span className="text-[#667781] dark:text-[#8696a0] text-[12px] truncate">
+                  {replyingTo.text || 'Media message'}
+                </span>
+              </div>
+            </div>
+            <button 
+              onClick={() => setReplyingTo(null)} 
+              className="p-1 -mr-1 text-[#667781] dark:text-[#8696a0] hover:text-[#3b4a54] dark:hover:text-[#e9edef] flex-none"
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
+          </div>
+        )}
+
+        <div className="flex items-end space-x-2 px-2 py-2">
           <div className="flex-1 bg-white dark:bg-[#2a3942] rounded-lg flex items-end">
             {/* Media button */}
             <div className="flex items-center px-1.5 py-1.5">
@@ -1040,12 +1227,7 @@ const TopicChat = ({ topic, onClose }) => {
             <textarea
               ref={inputRef}
               value={newMessage}
-              onChange={(e) => {
-                setNewMessage(e.target.value);
-                e.target.style.height = '42px';
-                e.target.style.height = `${e.target.scrollHeight}px`;
-                handleTyping();
-              }}
+              onChange={handleMessageChange}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -1097,45 +1279,12 @@ const TopicChat = ({ topic, onClose }) => {
         </div>
       </div>
 
-      {/* Media Preview */}
-      {selectedFile && (
-        <div className="fixed inset-x-0 bottom-[60px] bg-white dark:bg-[#233138] shadow-lg overflow-hidden z-[55] border-t border-gray-200 dark:border-gray-700">
-          <div className="p-3 flex items-center justify-between">
-            <div className="flex items-center space-x-3 min-w-0 flex-1">
-              <div className="flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                <PhotoIcon className="h-6 w-6 text-gray-400 dark:text-gray-500" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                    {selectedFile.name}
-                </p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
-                </p>
-              </div>
-                </div>
-                <button
-                  onClick={() => {
-                    setSelectedFile(null);
-                    setPreviewUrl(null);
-                    if (fileInputRef.current) {
-                      fileInputRef.current.value = '';
-                    }
-                  }}
-              className="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-              <XCircleIcon className="h-6 w-6" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Error Message */}
-          {error && (
-            <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-200 p-2 sm:p-3 rounded-lg shadow-lg">
-              {error}
-            </div>
-          )}
+      {/* Error Message */}
+      {error && (
+        <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-200 p-2 sm:p-3 rounded-lg shadow-lg">
+          {error}
+        </div>
+      )}
 
       {/* Hidden file inputs */}
       <input
@@ -1162,33 +1311,46 @@ const TopicChat = ({ topic, onClose }) => {
         />
       )}
 
-      {/* Add styles for mobile keyboard handling */}
+      {/* Update styles for mobile */}
       <style jsx global>{`
-        @media (max-width: 768px) {
-          body.keyboard-open {
-            height: var(--chat-height);
+        /* Prevent body scroll when chat is open */
+        body.chat-open {
             overflow: hidden;
+          position: fixed;
+          width: 100%;
+          height: 100%;
+        }
+
+        /* Prevent elastic scroll on iOS */
+        .overflow-y-auto {
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior-y: contain;
+        }
+
+        /* Prevent zoom on input focus for iOS */
+        @media screen and (max-width: 768px) {
+          input, textarea {
+            font-size: 16px !important;
           }
-          
-          textarea {
-            font-size: 16px !important; /* Prevent iOS zoom */
+        }
+
+        /* Handle viewport height on mobile */
+        @supports (-webkit-touch-callout: none) {
+          .fixed.inset-0 {
+            height: -webkit-fill-available;
           }
         }
-        
-        .audio-player {
-          --webkit-appearance: none;
-          background: transparent;
-        }
-        .audio-player::-webkit-media-controls-panel {
-          background: transparent;
-        }
-        .audio-player::-webkit-media-controls-current-time-display,
-        .audio-player::-webkit-media-controls-time-remaining-display {
-          color: #667781;
-        }
-        .dark .audio-player::-webkit-media-controls-current-time-display,
-        .dark .audio-player::-webkit-media-controls-time-remaining-display {
-          color: #8696a0;
+
+        /* Ensure content is visible above keyboard on iOS */
+        @media screen and (max-width: 768px) {
+          .fixed.inset-0 {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            height: 100%;
+          }
         }
       `}</style>
     </div>

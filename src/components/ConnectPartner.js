@@ -15,6 +15,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { Dialog } from '@headlessui/react';
 import { Fragment } from 'react';
+import { toast } from 'react-hot-toast';
 
 const ConnectPartner = () => {
   const [inviteCode, setInviteCode] = useState('');
@@ -44,6 +45,8 @@ const ConnectPartner = () => {
     sendPartnerRequest,
     pendingRequests,
     acceptPartnerRequest,
+    declinePartnerRequest,
+    setPendingRequests,
   } = useAuth();
 
   const inputRef = useRef(null);
@@ -209,6 +212,29 @@ const ConnectPartner = () => {
     }
   };
 
+  const handleDeclineRequest = async (requestId) => {
+    if (!requestId) return;
+    
+    setIsLoading(true);
+    try {
+      await declinePartnerRequest(requestId);
+      
+      // Show success notification
+      toast.success('Request declined successfully', {
+        duration: 3000,
+        position: 'top-center',
+      });
+    } catch (error) {
+      // Show error notification
+      toast.error(error.message || 'Failed to decline request', {
+        duration: 4000,
+        position: 'top-center',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (!isOnline) {
     return (
       <div className="bg-white p-6 rounded-lg shadow-md">
@@ -330,6 +356,13 @@ const ConnectPartner = () => {
                       className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
                     >
                       Accept
+                    </button>
+                    <button
+                      onClick={() => handleDeclineRequest(request.id)}
+                      disabled={isLoading}
+                      className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                    >
+                      Decline
                     </button>
                   </div>
                 </div>

@@ -19,8 +19,9 @@ import { ref, onValue, push, update, serverTimestamp, get, set } from 'firebase/
 import { rtdb } from '../firebase/config';
 import TopicChat from '../components/TopicChat';
 import TopicItem from '../components/TopicItem';
+import { formatDate } from '../utils/dateUtils';
 
-// Move constants outside of component
+// Constants
 const CATEGORY_ICONS = {
   'All': HashtagIcon,
   'Relationship': HeartIcon,
@@ -30,20 +31,13 @@ const CATEGORY_ICONS = {
   'Custom': UserIcon,
 };
 
-const formatDate = (timestamp) => {
-  if (!timestamp) return '';
-  const date = typeof timestamp === 'number' ? new Date(timestamp) : timestamp.toDate?.() || new Date(timestamp);
-  return date.toLocaleDateString();
-};
-
-// Separate loading component
+// Components
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center py-4">
     <div className="animate-spin rounded-full h-8 w-8 border-2 border-black border-t-transparent dark:border-white dark:border-t-transparent"></div>
   </div>
 );
 
-// Separate empty state component
 const EmptyState = () => (
   <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
     <ChatBubbleLeftRightIcon className="h-12 w-12 text-gray-400 dark:text-gray-600 mb-2" />
@@ -51,56 +45,26 @@ const EmptyState = () => (
   </div>
 );
 
-// Separate not connected component
 const NotConnected = () => (
-  <div className="min-h-screen bg-gray-50 dark:bg-black">
-    <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-      <div className="text-center py-12">
-        <ChatBubbleLeftRightIcon className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" />
-        <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">Not Connected</h3>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Connect with a partner to see and discuss topics together
-        </p>
-      </div>
-    </div>
+  <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+    <UserIcon className="h-12 w-12 text-gray-400 dark:text-gray-600 mb-2" />
+    <p className="text-gray-500 dark:text-gray-400">Connect with a partner to start discussing topics!</p>
   </div>
 );
 
 // Main component
-const Topics = () => {
+function Topics() {
   const { user, partner, isOnline } = useAuth();
-
-  if (!user || !partner) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <p className="text-gray-600 dark:text-gray-400">
-            Please connect with a partner to view topics.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isOnline) {
-    return <NotConnected />;
-  }
-
-  return <TopicsContent user={user} partner={partner} isOnline={isOnline} />;
-};
-
-// Content component with props passed explicitly
-const TopicsContent = ({ user, partner, isOnline }) => {
-  const [newTopic, setNewTopic] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All');
   const [topics, setTopics] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [formError, setFormError] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedTopic, setSelectedTopic] = useState(null);
-  const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
-  const [unreadResponses, setUnreadResponses] = useState({});
+  const [showAddTopic, setShowAddTopic] = useState(false);
+  const [newTopicQuestion, setNewTopicQuestion] = useState('');
+  const [newTopicCategory, setNewTopicCategory] = useState('Custom');
   const [unreadMessagesByTopic, setUnreadMessagesByTopic] = useState({});
+  const [unreadResponses, setUnreadResponses] = useState({});
 
   // Check for open chat on mount
   useEffect(() => {
@@ -267,22 +231,27 @@ const TopicsContent = ({ user, partner, isOnline }) => {
     };
   }, [user?.uid, topics, selectedTopic?.id]);
 
+  // Early return if no user or partner
+  if (!user || !partner) {
+    return <NotConnected />;
+  }
+
   const handleAddTopic = async (e) => {
     e.preventDefault();
-    setFormError(null);
+    setError(null);
     
-    if (!newTopic.trim()) {
-      setFormError('Please enter a topic');
+    if (!newTopicQuestion.trim()) {
+      setError('Please enter a topic');
       return;
     }
     
     if (!isOnline) {
-      setFormError('You must be online to add topics');
+      setError('You must be online to add topics');
       return;
     }
     
     if (!partner) {
-      setFormError('You need to connect with a partner first');
+      setError('You need to connect with a partner first');
       return;
     }
 
@@ -291,8 +260,8 @@ const TopicsContent = ({ user, partner, isOnline }) => {
       const newTopicRef = push(topicsRef);
       
       const topicData = {
-        question: newTopic.trim(),
-        category: selectedCategory === 'All' ? 'Custom' : selectedCategory,
+        question: newTopicQuestion.trim(),
+        category: newTopicCategory === 'All' ? 'Custom' : newTopicCategory,
         createdBy: user.uid,
         creatorName: user.displayName || 'Anonymous',
         partnerId: partner.uid,
@@ -303,11 +272,11 @@ const TopicsContent = ({ user, partner, isOnline }) => {
       };
       
       await set(newTopicRef, topicData);
-      setNewTopic('');
-      setFormError(null);
+      setNewTopicQuestion('');
+      setError(null);
     } catch (err) {
       console.error('Error adding topic:', err);
-      setFormError(err.message || 'Failed to add topic. Please try again.');
+      setError(err.message || 'Failed to add topic. Please try again.');
     }
   };
 
@@ -665,17 +634,17 @@ const TopicsContent = ({ user, partner, isOnline }) => {
           <div className="flex items-center gap-2">
             <input
               type="text"
-              value={newTopic}
-              onChange={(e) => setNewTopic(e.target.value)}
+              value={newTopicQuestion}
+              onChange={(e) => setNewTopicQuestion(e.target.value)}
               placeholder="Enter a new topic..."
               className="flex-1 h-10 px-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-black text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-black dark:focus:border-white"
               style={{ textTransform: 'capitalize' }}
             />
             <button
               type="submit"
-              disabled={!newTopic.trim()}
+              disabled={!newTopicQuestion.trim()}
               className={`h-10 px-4 inline-flex items-center justify-center border border-transparent rounded-lg text-sm font-medium transition-all duration-200 ${
-                newTopic.trim() 
+                newTopicQuestion.trim() 
                   ? 'text-white bg-black hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black dark:focus:ring-white dark:focus:ring-offset-black' 
                   : 'bg-gray-300 cursor-not-allowed dark:bg-gray-700 text-gray-500 dark:text-gray-400'
               }`}
@@ -684,8 +653,8 @@ const TopicsContent = ({ user, partner, isOnline }) => {
               <span className="sr-only">Add Topic</span>
             </button>
           </div>
-          {formError && (
-            <p className="mt-2 text-sm text-red-600 dark:text-red-400">{formError}</p>
+          {error && (
+            <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
           )}
         </form>
       </div>
@@ -721,6 +690,7 @@ const TopicsContent = ({ user, partner, isOnline }) => {
       )}
     </div>
   );
-};
+}
 
+// Export the component
 export default Topics;

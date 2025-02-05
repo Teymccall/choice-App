@@ -6,11 +6,13 @@ import {
   ChartBarIcon,
   Cog6ToothIcon,
   Bars3Icon,
-  XMarkIcon
+  XMarkIcon,
+  UserGroupIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthContext';
 import { ref, onValue } from 'firebase/database';
 import { rtdb } from '../firebase/config';
+import toast from 'react-hot-toast';
 
 const FloatingNav = () => {
   const location = useLocation();
@@ -20,21 +22,33 @@ const FloatingNav = () => {
   const [unreadChats, setUnreadChats] = useState(0);
   const [pendingResponses, setPendingResponses] = useState(0);
   const [newTopics, setNewTopics] = useState(0);
+  const [unreadMessagesByTopic, setUnreadMessagesByTopic] = useState({});
+  const [unreadResponsesByTopic, setUnreadResponsesByTopic] = useState({});
+  const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
+  const [hasUnreadResponses, setHasUnreadResponses] = useState(false);
 
   const navItems = [
-    { path: '/dashboard', name: 'Dashboard', icon: HomeIcon },
-    { 
-      path: '/topics', 
-      name: 'Topics', 
-      icon: ChatBubbleLeftRightIcon,
-      badge: {
-        messages: true,
-        responses: true,
-        topics: true
-      }
+    {
+      path: '/dashboard',
+      icon: HomeIcon,
+      label: 'Home'
     },
-    { path: '/results', name: 'Results', icon: ChartBarIcon },
-    { path: '/settings', name: 'Settings', icon: Cog6ToothIcon },
+    {
+      path: '/topics',
+      icon: ChatBubbleLeftRightIcon,
+      label: 'Topics',
+      showNotification: hasUnreadMessages || hasUnreadResponses
+    },
+    {
+      path: '/results',
+      icon: ChartBarIcon,
+      label: 'Results'
+    },
+    {
+      path: '/settings',
+      icon: Cog6ToothIcon,
+      label: 'Settings'
+    }
   ];
 
   // Close menu when clicking outside
@@ -49,35 +63,128 @@ const FloatingNav = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Track notifications and unread messages
+  // Listen for chat updates
   useEffect(() => {
+    let unsubscribe;
+
     if (!user?.uid || !partner?.uid) {
-      // Reset counts if no partner
+      setUnreadChats(0);
+      setUnreadMessagesByTopic({});
+      return;
+    }
+
+    const chatsRef = ref(rtdb, 'topicChats');
+    unsubscribe = onValue(chatsRef, (snapshot) => {
+      // Verify user and partner still exist when callback fires
+      if (!user?.uid || !partner?.uid) {
+        setUnreadChats(0);
+        setUnreadMessagesByTopic({});
+        return;
+      }
+
+      const data = snapshot.val();
+      if (!data) {
+        setUnreadChats(0);
+        setUnreadMessagesByTopic({});
+        return;
+      }
+
+      let unreadCount = 0;
+      const unreadByTopic = {};
+
+      Object.entries(data).forEach(([topicId, chat]) => {
+        if (!chat) return;
+
+        // Skip if user or partner is no longer available
+        if (!user?.uid || !partner?.uid) return;
+
+        const lastReadTimestamp = parseInt(localStorage.getItem(`lastRead_${topicId}_${user.uid}`)) || 0;
+        const isTopicOpen = sessionStorage.getItem('openTopicChatId') === topicId;
+        
+        if (isTopicOpen) {
+          localStorage.setItem(`lastRead_${topicId}_${user.uid}`, Date.now().toString());
+          return;
+        }
+
+        let topicHasUnread = false;
+
+        Object.entries(chat).forEach(([messageId, message]) => {
+          if (messageId === 'typing') return;
+          
+          // Skip if message is not from current conversation partners
+          if (message.userId !== partner.uid || message.partnerId !== user.uid) return;
+          
+          const messageTimestamp = message.timestamp ? 
+            (typeof message.timestamp === 'number' ? 
+              message.timestamp : 
+              message.timestamp?.toMillis?.() || 
+              parseInt(message.timestamp) || 
+              Date.now()
+            ) : Date.now();
+
+          if (messageTimestamp > lastReadTimestamp) {
+            unreadCount++;
+            topicHasUnread = true;
+          }
+        });
+
+        if (topicHasUnread) {
+          unreadByTopic[topicId] = true;
+        }
+      });
+
+      setUnreadChats(unreadCount);
+      setUnreadMessagesByTopic(unreadByTopic);
+    });
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [user?.uid, partner?.uid]);
+
+  // Listen for topics and responses
+  useEffect(() => {
+    let unsubscribe;
+    let previousPendingCount = 0;  // Track previous count to show toast only on changes
+
+    if (!user?.uid || !partner?.uid) {
       setNewTopics(0);
       setPendingResponses(0);
-      setUnreadChats(0);
+      setUnreadResponsesByTopic({});
       return;
     }
 
     const topicsRef = ref(rtdb, 'topics');
-    
-    const unsubscribe = onValue(topicsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (!data) {
-        setPendingResponses(0);
+    unsubscribe = onValue(topicsRef, (snapshot) => {
+      // Verify user and partner still exist when callback fires
+      if (!user?.uid || !partner?.uid) {
         setNewTopics(0);
+        setPendingResponses(0);
+        setUnreadResponsesByTopic({});
         return;
       }
 
-      // Get the last checked timestamp for topics
+      const data = snapshot.val();
+      if (!data) {
+        setNewTopics(0);
+        setPendingResponses(0);
+        setUnreadResponsesByTopic({});
+        return;
+      }
+
       const lastCheckedTopics = parseInt(
         localStorage.getItem(`lastChecked_topics_${user.uid}`)
       ) || Date.now();
 
       let newTopicsCount = 0;
       let pendingResponsesCount = 0;
+      const unreadResponses = {};
 
       Object.entries(data).forEach(([topicId, topic]) => {
+        if (!topic || !user?.uid || !partner?.uid) return;
+
         // Only count topics that involve both current user and current partner
         const isRelevantTopic = (topic.createdBy === user.uid && topic.partnerId === partner.uid) ||
                                (topic.createdBy === partner.uid && topic.partnerId === user.uid);
@@ -96,65 +203,31 @@ const FloatingNav = () => {
           
           if (responseTime > lastChecked && !topic.responses[user.uid]) {
             pendingResponsesCount++;
+            unreadResponses[topicId] = true;
           }
         }
       });
-      
+
+      // Show toast notification if pending responses count has increased
+      if (pendingResponsesCount > previousPendingCount) {
+        toast.success(`You have ${pendingResponsesCount} pending response${pendingResponsesCount === 1 ? '' : 's'} from your partner!`, {
+          duration: 4000,
+          position: 'bottom-right',
+          icon: '🔔',
+        });
+      }
+      previousPendingCount = pendingResponsesCount;
+
       setNewTopics(newTopicsCount);
       setPendingResponses(pendingResponsesCount);
+      setUnreadResponsesByTopic(unreadResponses);
     });
 
-    return () => unsubscribe();
-  }, [user?.uid, partner?.uid]);
-
-  // Listen for chat updates
-  useEffect(() => {
-    if (!user?.uid || !partner?.uid) return;
-
-    const chatsRef = ref(rtdb, 'topicChats');
-    const unsubscribe = onValue(chatsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (!data) {
-        setUnreadChats(0);
-        return;
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
       }
-
-      let unreadCount = 0;
-      Object.entries(data).forEach(([topicId, chat]) => {
-        if (!chat) return;
-
-        const lastReadTimestamp = parseInt(localStorage.getItem(`lastRead_${topicId}_${user.uid}`)) || 0;
-        const isTopicOpen = sessionStorage.getItem('openTopicChatId') === topicId;
-        
-        // Skip counting for open topics and update lastRead timestamp
-        if (isTopicOpen) {
-          localStorage.setItem(`lastRead_${topicId}_${user.uid}`, Date.now().toString());
-          return;
-        }
-
-        Object.entries(chat).forEach(([messageId, message]) => {
-          if (messageId === 'typing') return; // Skip typing status entries
-          
-          const messageTimestamp = message.timestamp ? 
-            (typeof message.timestamp === 'number' ? 
-              message.timestamp : 
-              message.timestamp?.toMillis?.() || 
-              parseInt(message.timestamp) || 
-              Date.now()
-            ) : Date.now();
-
-          if (message.userId === partner.uid && 
-              message.partnerId === user.uid && 
-              messageTimestamp > lastReadTimestamp) {
-            unreadCount++;
-          }
-        });
-      });
-
-      setUnreadChats(unreadCount);
-    });
-
-    return () => unsubscribe();
+    };
   }, [user?.uid, partner?.uid]);
 
   // Add effect to clear unread messages when viewing a topic
@@ -163,42 +236,7 @@ const FloatingNav = () => {
       const openTopicId = sessionStorage.getItem('openTopicChatId');
       if (openTopicId && user?.uid) {
         localStorage.setItem(`lastRead_${openTopicId}_${user.uid}`, Date.now().toString());
-        // Force a recount of unread messages
-        const chatsRef = ref(rtdb, 'topicChats');
-        onValue(chatsRef, (snapshot) => {
-          const data = snapshot.val();
-          if (!data) {
-            setUnreadChats(0);
-            return;
-          }
-
-          let unreadCount = 0;
-          Object.entries(data).forEach(([topicId, chat]) => {
-            if (!chat || topicId === openTopicId) return;
-
-            const lastReadTimestamp = parseInt(localStorage.getItem(`lastRead_${topicId}_${user.uid}`)) || 0;
-
-            Object.entries(chat).forEach(([messageId, message]) => {
-              if (messageId === 'typing') return;
-              
-              const messageTimestamp = message.timestamp ? 
-                (typeof message.timestamp === 'number' ? 
-                  message.timestamp : 
-                  message.timestamp?.toMillis?.() || 
-                  parseInt(message.timestamp) || 
-                  Date.now()
-                ) : Date.now();
-
-              if (message.userId === partner.uid && 
-                  message.partnerId === user.uid && 
-                  messageTimestamp > lastReadTimestamp) {
-                unreadCount++;
-              }
-            });
-          });
-
-          setUnreadChats(unreadCount);
-        }, { onlyOnce: true });
+        localStorage.setItem(`lastChecked_${openTopicId}_${user.uid}`, Date.now().toString());
       }
     };
 
@@ -214,13 +252,25 @@ const FloatingNav = () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('topicChatOpened', handleStorageChange);
     };
-  }, [user?.uid, partner?.uid]);
+  }, [user?.uid]);
 
-  // Clear badges when navigating to topics page
+  // Update unread indicators when counts change
+  useEffect(() => {
+    setHasUnreadMessages(Object.keys(unreadMessagesByTopic).length > 0);
+    setHasUnreadResponses(Object.keys(unreadResponsesByTopic).length > 0);
+  }, [unreadMessagesByTopic, unreadResponsesByTopic]);
+
+  // Clear unread states when navigating to topics
   useEffect(() => {
     if (location.pathname === '/topics' && user?.uid) {
       localStorage.setItem(`lastChecked_topics_${user.uid}`, Date.now().toString());
-      setNewTopics(0);
+      
+      // Get current open topic from session storage
+      const openTopicId = sessionStorage.getItem('openTopicChatId');
+      if (openTopicId) {
+        localStorage.setItem(`lastRead_${openTopicId}_${user.uid}`, Date.now().toString());
+        localStorage.setItem(`lastChecked_${openTopicId}_${user.uid}`, Date.now().toString());
+      }
     }
   }, [location.pathname, user?.uid]);
 
@@ -274,25 +324,25 @@ const FloatingNav = () => {
             >
               <div className="flex items-center">
                 <item.icon className="h-5 w-5 mr-3" />
-                <span>{item.name}</span>
+                <span>{item.label}</span>
               </div>
-              {item.badge && (
+              {item.showNotification && (
                 <div className="flex items-center space-x-2">
-                  {unreadChats > 0 && item.badge.messages && (
+                  {unreadChats > 0 && (
                     <span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-100 dark:bg-blue-900/30">
                       <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
                         {unreadChats}
                       </span>
                     </span>
                   )}
-                  {pendingResponses > 0 && item.badge.responses && (
+                  {pendingResponses > 0 && (
                     <span className="flex items-center justify-center h-5 w-5 rounded-full bg-yellow-100 dark:bg-yellow-900/30">
                       <span className="text-xs font-medium text-yellow-600 dark:text-yellow-400">
                         {pendingResponses}
                       </span>
                     </span>
                   )}
-                  {newTopics > 0 && item.badge.topics && (
+                  {newTopics > 0 && (
                     <span className="flex items-center justify-center h-5 w-5 rounded-full bg-green-100 dark:bg-green-900/30">
                       <span className="text-xs font-medium text-green-600 dark:text-green-400">
                         {newTopics}
@@ -309,4 +359,4 @@ const FloatingNav = () => {
   );
 };
 
-export default FloatingNav; 
+export default FloatingNav;

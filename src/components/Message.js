@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CheckIcon, XMarkIcon, PhotoIcon, ChatBubbleLeftRightIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import {
+  CheckIcon,
+  XMarkIcon,
+  PhotoIcon,
+  ChatBubbleLeftRightIcon,
+  PencilIcon,
+  TrashIcon,
+  ClockIcon,
+  EllipsisVerticalIcon,
+  DocumentIcon
+} from '@heroicons/react/24/outline';
+import { CheckIcon as CheckIconSolid } from '@heroicons/react/24/solid';
+import { formatTime } from '../utils/dateUtils';
 
 const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRefs, onDelete, onEdit, onStartEdit }) => {
   const [showMenu, setShowMenu] = useState(false);
@@ -13,6 +25,7 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const longPressTimeout = useRef(null);
   const [isLongPressed, setIsLongPressed] = useState(false);
+  const [error, setError] = useState('');
 
   // Add time window checks
   const EDIT_TIME_WINDOW = 15 * 60 * 1000; // 15 minutes in milliseconds
@@ -73,52 +86,13 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
     }
   };
 
-  const handleTouchStart = (e) => {
-    touchStart.current = e.touches[0].clientX;
-    longPressTimeout.current = setTimeout(() => {
-      setIsLongPressed(true);
-      setShowMenu(true);
-    }, 500);
-  };
-
-  const handleTouchMove = (e) => {
-    if (longPressTimeout.current) {
-      clearTimeout(longPressTimeout.current);
+  const handleDelete = async (deleteForEveryone = false) => {
+    if (!isWithinDeleteWindow() && deleteForEveryone) {
+      setError('Messages can only be deleted for everyone within 1 hour of sending');
+      return;
     }
-    if (!touchStart.current) return;
-    const currentX = e.touches[0].clientX;
-    const diff = currentX - touchStart.current;
-    
-    if (diff > 0) {
-      const swipe = Math.min(diff, swipeThreshold);
-      setSwipeX(swipe);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    if (longPressTimeout.current) {
-      clearTimeout(longPressTimeout.current);
-    }
-    if (!isLongPressed && swipeX >= swipeThreshold) {
-      onReply(message);
-    }
-    touchStart.current = 0;
-    setSwipeX(0);
-    setIsLongPressed(false);
-  };
-
-  const handleTouchCancel = () => {
-    if (longPressTimeout.current) {
-      clearTimeout(longPressTimeout.current);
-    }
-    touchStart.current = 0;
-    setSwipeX(0);
-    setIsLongPressed(false);
-  };
-
-  const handleDelete = async (deleteForEveryone) => {
-    setShowDeleteModal(false);
     await onDelete(message.id, deleteForEveryone);
+    setShowMenu(false);
   };
 
   const startEdit = () => {
@@ -126,25 +100,27 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
     setShowMenu(false);
   };
 
-  const renderReadReceipt = () => {
+  const renderMessageStatus = () => {
     if (!isOwnMessage) return null;
-    
+
     if (message.read) {
       return (
         <div className="flex -space-x-1">
-          <CheckIcon className="h-3.5 w-3.5 text-blue-500" />
-          <CheckIcon className="h-3.5 w-3.5 text-blue-500" />
+          <CheckIconSolid className="h-3.5 w-3.5 text-[#53bdeb]" />
+          <CheckIconSolid className="h-3.5 w-3.5 text-[#53bdeb]" />
         </div>
       );
     } else if (message.delivered) {
       return (
         <div className="flex -space-x-1">
-          <CheckIcon className="h-3.5 w-3.5 text-gray-500" />
-          <CheckIcon className="h-3.5 w-3.5 text-gray-500" />
+          <CheckIcon className="h-3.5 w-3.5 text-[#8696a0]" />
+          <CheckIcon className="h-3.5 w-3.5 text-[#8696a0]" />
         </div>
       );
+    } else if (message.sent) {
+      return <CheckIcon className="h-3.5 w-3.5 text-[#8696a0]" />;
     } else {
-      return <CheckIcon className="h-3.5 w-3.5 text-gray-500" />;
+      return <ClockIcon className="h-3.5 w-3.5 text-[#8696a0]" />;
     }
   };
 
@@ -228,169 +204,216 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
   return (
     <div
       ref={messageRef}
-      className={`flex items-end space-x-2 group px-[3%] sm:px-0 mb-1 ${isOwnMessage ? 'flex-row-reverse space-x-reverse' : ''}`}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onTouchCancel={handleTouchCancel}
-      style={{ touchAction: 'none' }}
-      onContextMenu={(e) => e.preventDefault()}
+      className={`relative flex ${isOwnMessage ? 'justify-end' : 'justify-start'} mb-2`}
+      onTouchStart={(e) => {
+        touchStart.current = e.touches[0].clientX;
+        longPressTimeout.current = setTimeout(() => {
+          if ('vibrate' in navigator) {
+            navigator.vibrate(50);
+          }
+          setShowMenu(true);
+        }, 500);
+      }}
+      onTouchMove={(e) => {
+        if (longPressTimeout.current) {
+          clearTimeout(longPressTimeout.current);
+        }
+        const currentX = e.touches[0].clientX;
+        const diff = currentX - touchStart.current;
+        
+        if (diff > 0 && diff <= swipeThreshold) {
+          setSwipeX(diff);
+        }
+      }}
+      onTouchEnd={() => {
+        if (longPressTimeout.current) {
+          clearTimeout(longPressTimeout.current);
+        }
+        if (swipeX >= swipeThreshold / 2) {
+          onReply(message);
+        }
+        setSwipeX(0);
+      }}
+      onTouchCancel={() => {
+        if (longPressTimeout.current) {
+          clearTimeout(longPressTimeout.current);
+        }
+        setSwipeX(0);
+      }}
+      style={{
+        WebkitTouchCallout: 'none',
+        WebkitUserSelect: 'none',
+        KhtmlUserSelect: 'none',
+        MozUserSelect: 'none',
+        msUserSelect: 'none',
+        userSelect: 'none',
+        WebkitTapHighlightColor: 'transparent'
+      }}
     >
-      <div className={`relative max-w-[85%] w-fit ${isOwnMessage ? 'bg-[#d9fdd3] dark:bg-[#005c4b]' : 'bg-white dark:bg-[#202c33]'} rounded-lg shadow-sm`}>
+      <div 
+        className={`
+          message-content relative max-w-[85%] w-fit
+          ${isOwnMessage 
+            ? 'bg-[#e7ffdb] dark:bg-[#005c4b]' 
+            : 'bg-[#ffffff] dark:bg-[#202c33]'
+          } 
+          rounded-lg shadow-sm
+        `}
+      >
         {message.replyTo && (
-          <div className={`
-            ${isOwnMessage ? 'bg-[#dcf8c6]' : 'bg-white'} rounded-t-[7px] overflow-hidden
-          `}>
-            {renderReplyContent()}
+          <div 
+            className={`
+              px-2 pt-1 pb-2 -mb-1 cursor-pointer
+              ${isOwnMessage 
+                ? 'bg-[#d9fdd3] dark:bg-[#025144]' 
+                : 'bg-[#ffffff] dark:bg-[#1c262d]'
+              }
+              rounded-t-lg border-l-[3px] border-[#25d366] dark:border-[#00a884]
+            `}
+            onClick={handleReplyClick}
+          >
+            <div className="flex flex-col min-w-0">
+              <span className="text-[#00a884] dark:text-[#00a884] text-[13px] font-medium">
+                {message.replyTo.userId === user.uid ? 'You' : 'Partner'}
+              </span>
+              <span className="text-[#667781] dark:text-[#8696a0] text-[13px] truncate">
+                {message.replyTo.text || 'Media message'}
+              </span>
+            </div>
           </div>
         )}
 
-        <div className={`
-          relative group
-          ${message.media && !isDeleted ? 'rounded-lg overflow-hidden' : message.replyTo ? 'rounded-b-[7px]' : 'rounded-[7px]'}
-          ${isOwnMessage 
-            ? isDeleted ? 'bg-[#f0f0f0] dark:bg-gray-700' : 'bg-[#dcf8c6] dark:bg-[#202c33]'
-            : isDeleted ? 'bg-[#f0f0f0] dark:bg-gray-700' : 'bg-white dark:bg-[#202c33]'
-          }
-          ${message.media && !isDeleted ? '' : isOwnMessage ? 'rounded-tr-[4px]' : 'rounded-tl-[4px]'}
-          shadow-sm
-        `}>
+        <div 
+          className={`
+            relative px-[9px] py-[6px] min-w-[85px] max-w-full
+            ${message.replyTo ? 'rounded-b-lg' : 'rounded-lg'}
+            ${isOwnMessage 
+              ? 'bg-[#d9fdd3] dark:bg-[#005c4b]' 
+              : 'bg-[#ffffff] dark:bg-[#202c33]'
+            }
+          `}
+        >
           {/* Message tail */}
-          <div className={`
-            absolute top-0 w-3 h-3 overflow-hidden
-            ${isOwnMessage ? '-right-[10px]' : '-left-[10px]'}
-            ${isDeleted ? 'hidden' : ''}
-            ${message.replyTo ? 'top-[unset] bottom-0' : ''}
-          `}>
-            <div className={`
-              w-4 h-4 transform rotate-45 origin-top-left
-              ${isOwnMessage 
-                ? 'bg-[#dcf8c6] dark:bg-[#202c33] -translate-x-1/2' 
-                : 'bg-white dark:bg-[#202c33] translate-x-1/2'
-              }
-            `}/>
+          <div 
+            className={`
+              absolute top-0 w-3 h-3 overflow-hidden
+              ${isOwnMessage ? '-right-[10px]' : '-left-[10px]'}
+              ${message.replyTo ? 'top-[unset] bottom-0' : ''}
+            `}
+          >
+            <div 
+              className={`
+                w-4 h-4 transform rotate-45 origin-top-left
+                ${isOwnMessage 
+                  ? 'bg-[#d9fdd3] dark:bg-[#005c4b] -translate-x-1/2' 
+                  : 'bg-white dark:bg-[#202c33] translate-x-1/2'
+                }
+              `}
+            />
           </div>
 
-          <div className="px-[9px] py-[6px] min-w-[85px] max-w-full">
-            {isDeleted || message.deletedForEveryone ? (
-              <div className="flex items-center space-x-2">
-                <span className="text-[14.2px] text-gray-500 dark:text-gray-400 italic">
-                  {message.deletedForEveryone 
-                    ? message.deletedBy === user.uid 
-                      ? "You deleted this message"
-                      : "This message was deleted"
-                    : "You deleted this message for yourself"}
-                </span>
-                <span className="text-[11px] text-gray-500 dark:text-gray-400 leading-none">
-                  {timeString}
-                </span>
-              </div>
-            ) : (
-              <>
-                {message.media && (
-                  <div className="max-w-[300px] sm:max-w-[350px] md:max-w-[400px]">
-                    {renderMediaContent()}
-                  </div>
-                )}
-                {message.text && (
-                  <div className="flex flex-col max-w-[250px] sm:max-w-[300px] md:max-w-[400px]">
-                    <p className="text-[14.2px] whitespace-pre-wrap break-words leading-[19px] text-[#303030] dark:text-white">
-                      {message.text}
-                      {message.edited && (
-                        <span className="text-[11px] text-[#667781] dark:text-[#8696a0] ml-1">
-                          (edited)
-                        </span>
-                      )}
-                    </p>
-                    <div className="flex justify-end items-center mt-1 space-x-1">
-                      <span className="text-[11px] text-[#667781] dark:text-[#8696a0] leading-none flex-shrink-0">
-                        {timeString}
+          {isDeleted || message.deletedForEveryone ? (
+            <div className="flex items-center space-x-2">
+              <span className="text-[14.2px] text-[#667781] dark:text-[#8696a0] italic">
+                {message.deletedForEveryone 
+                  ? message.deletedBy === user.uid 
+                    ? "You deleted this message"
+                    : "This message was deleted"
+                  : "You deleted this message for yourself"}
+              </span>
+              <span className="text-[11px] text-[#667781] dark:text-[#8696a0] leading-none">
+                {timeString}
+              </span>
+            </div>
+          ) : (
+            <>
+              {message.media && (
+                <div className="max-w-[300px] sm:max-w-[350px] md:max-w-[400px]">
+                  {renderMediaContent()}
+                </div>
+              )}
+              {message.text && (
+                <div className="flex flex-col max-w-[250px] sm:max-w-[300px] md:max-w-[400px]">
+                  <p className="text-[14.2px] whitespace-pre-wrap break-words leading-[19px] text-[#111b21] dark:text-[#e9edef]">
+                    {message.text}
+                    {message.edited && (
+                      <span className="text-[11px] text-[#667781] dark:text-[#8696a0] ml-1">
+                        (edited)
                       </span>
-                      {renderReadReceipt()}
-                    </div>
+                    )}
+                  </p>
+                  <div className="flex justify-end items-center mt-1 space-x-1">
+                    <span className="text-[11px] text-[#667781] dark:text-[#8696a0] leading-none flex-shrink-0">
+                      {timeString}
+                    </span>
+                    {renderMessageStatus()}
                   </div>
-                )}
-              </>
-            )}
-          </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
       {/* Message Options Menu */}
       {showMenu && !isDeleted && (
-        <div 
-          ref={menuRef}
-          className={`
-            fixed z-50 bg-white dark:bg-[#233138] rounded-lg shadow-lg py-1 w-[180px]
-            ${isOwnMessage ? 'right-4' : 'left-4'}
-          `}
-          style={{
-            top: '50%',
-            transform: 'translateY(-50%)',
-            maxHeight: 'calc(100vh - 100px)',
-            overflowY: 'auto'
-          }}
-        >
-          <button
-            onClick={() => {
-              setShowMenu(false);
-              onReply(message);
+        <>
+          <div 
+            className="fixed inset-0 z-40"
+            onClick={() => setShowMenu(false)}
+          />
+          
+          <div 
+            ref={menuRef}
+            className="absolute z-50 bg-white dark:bg-[#233138] rounded-md shadow-lg overflow-hidden w-[180px]"
+            style={{
+              top: -10,
+              right: isOwnMessage ? 0 : 'auto',
+              left: isOwnMessage ? 'auto' : 0,
             }}
-            className="w-full px-4 py-3 text-left hover:bg-[#f0f2f5] dark:hover:bg-[#182229] flex items-center space-x-3"
           >
-            <ChatBubbleLeftRightIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1] flex-shrink-0" />
-            <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Reply</span>
-          </button>
-          {isOwnMessage ? (
-            <>
-              {isWithinEditWindow() && (
-                <button
-                  onClick={() => {
-                    setShowMenu(false);
-                    startEdit();
-                  }}
-                  className="w-full px-4 py-3 text-left hover:bg-[#f0f2f5] dark:hover:bg-[#182229] flex items-center space-x-3"
-                >
-                  <PencilIcon className="h-5 w-5 text-[#54656f] dark:text-[#aebac1] flex-shrink-0" />
-                  <span className="text-[15px] text-[#111b21] dark:text-[#e9edef]">Edit</span>
-                </button>
-              )}
+            <div className="py-1">
               <button
                 onClick={() => {
                   setShowMenu(false);
-                  handleDelete(false);
+                  onReply(message);
                 }}
-                className="w-full px-4 py-3 text-left hover:bg-[#f0f2f5] dark:hover:bg-[#182229] flex items-center space-x-3"
+                className="w-full px-4 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center space-x-3"
               >
-                <TrashIcon className="h-5 w-5 text-red-500 flex-shrink-0" />
-                <span className="text-[15px] text-red-500">Delete for me</span>
+                <ChatBubbleLeftRightIcon className="h-5 w-5 text-gray-600 dark:text-gray-300" />
+                <span className="text-[15px] text-gray-700 dark:text-gray-200">Reply</span>
               </button>
-              {isWithinDeleteWindow() && (
+
+              {isOwnMessage && (
                 <button
-                  onClick={() => {
-                    setShowMenu(false);
-                    handleDelete(true);
-                  }}
-                  className="w-full px-4 py-3 text-left hover:bg-[#f0f2f5] dark:hover:bg-[#182229] flex items-center space-x-3"
+                  onClick={startEdit}
+                  className="w-full px-4 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center space-x-3"
                 >
-                  <TrashIcon className="h-5 w-5 text-red-500 flex-shrink-0" />
+                  <PencilIcon className="h-5 w-5 text-gray-600 dark:text-gray-300" />
+                  <span className="text-[15px] text-gray-700 dark:text-gray-200">Edit</span>
+                </button>
+              )}
+
+              {isOwnMessage && (
+                <button
+                  onClick={() => handleDelete(true)}
+                  className="w-full px-4 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center space-x-3"
+                >
+                  <TrashIcon className="h-5 w-5 text-red-500" />
                   <span className="text-[15px] text-red-500">Delete for everyone</span>
                 </button>
               )}
-            </>
-          ) : (
-            <button
-              onClick={() => {
-                setShowMenu(false);
-                handleDelete(false);
-              }}
-              className="w-full px-4 py-3 text-left hover:bg-[#f0f2f5] dark:hover:bg-[#182229] flex items-center space-x-3"
-            >
-              <TrashIcon className="h-5 w-5 text-red-500 flex-shrink-0" />
-              <span className="text-[15px] text-red-500">Delete for me</span>
-            </button>
-          )}
-        </div>
+
+              <button
+                onClick={() => handleDelete(false)}
+                className="w-full px-4 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center space-x-3"
+              >
+                <TrashIcon className="h-5 w-5 text-red-500" />
+                <span className="text-[15px] text-red-500">Delete for me</span>
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Swipe indicator */}
@@ -408,12 +431,6 @@ const Message = ({ message, isOwnMessage, user, onReply, onImageClick, messageRe
       </div>
     </div>
   );
-};
-
-const formatTime = (timestamp) => {
-  if (!timestamp) return '';
-  const date = typeof timestamp === 'number' ? new Date(timestamp) : timestamp.toDate?.() || new Date(timestamp);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
 export default Message; 

@@ -172,12 +172,38 @@ export const AuthProvider = ({ children }) => {
   const [connectionState, setConnectionState] = useState('checking');
   const connectionRetryCount = useRef(0);
 
-  // Add listener for pending requests
+  // Add listener for partner requests
   useEffect(() => {
     if (!user) return;
 
+    // Listen for changes in partner requests collection
+    const q = query(
+      collection(db, 'partnerRequests'),
+      where('senderId', '==', user.uid),
+      where('status', '==', 'pending')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const updatedRequests = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.expiresAt.toDate() > new Date()) {
+          updatedRequests.push({
+            id: doc.id,
+            ...data
+          });
+        }
+      });
+      
+      // Update the pending requests state
+      setPendingRequests(updatedRequests);
+    }, (error) => {
+      console.error('Error listening to partner requests:', error);
+    });
+
+    // Also listen for user's pending requests array
     const userRef = doc(db, 'users', user.uid);
-    const unsubscribe = onSnapshot(userRef, async (snapshot) => {
+    const userUnsubscribe = onSnapshot(userRef, async (snapshot) => {
       if (snapshot.exists()) {
         const userData = snapshot.data();
         if (userData.pendingRequests?.length > 0) {
@@ -205,7 +231,10 @@ export const AuthProvider = ({ children }) => {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      userUnsubscribe();
+    };
   }, [user]);
 
   // Add searchUsers function
@@ -334,6 +363,63 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error('Error accepting partner request:', error);
       throw new Error('Failed to accept partner request. Please try again.');
+    }
+  };
+
+  // Add declinePartnerRequest function
+  const declinePartnerRequest = async (requestId) => {
+    if (!user) throw new Error('You must be logged in to decline a partner request');
+    
+    try {
+      // Get the request document first
+      const requestRef = doc(db, 'partnerRequests', requestId);
+      const requestDoc = await getDoc(requestRef);
+      
+      if (!requestDoc.exists()) {
+        throw new Error('Partner request not found');
+      }
+      
+      const request = requestDoc.data();
+      
+      // Validate the request
+      if (request.status !== 'pending') {
+        throw new Error('This request is no longer valid');
+      }
+      
+      if (request.recipientId !== user.uid) {
+        throw new Error('You are not authorized to decline this request');
+      }
+
+      // Update the request status directly
+      await updateDoc(requestRef, {
+        status: 'declined',
+        declinedAt: Timestamp.now(),
+        declinedBy: user.uid
+      });
+
+      // Remove from pending requests
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        pendingRequests: arrayRemove(requestId)
+      });
+
+      // Send notification to sender
+      const notificationRef = ref(rtdb, `notifications/${request.senderId}`);
+      await update(notificationRef, {
+        [Date.now()]: {
+          type: 'request_declined',
+          message: `${user.displayName || 'Someone'} has declined your connection request`,
+          timestamp: serverTimestamp()
+        }
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error declining partner request:', error);
+      if (error.code === 'permission-denied') {
+        throw new Error('You do not have permission to decline this request');
+      }
+      throw new Error('Failed to decline the request. Please try again.');
     }
   };
 
@@ -1225,6 +1311,7 @@ export const AuthProvider = ({ children }) => {
     searchUsers,
     sendPartnerRequest,
     acceptPartnerRequest,
+    declinePartnerRequest,
     pendingRequests
   };
 
